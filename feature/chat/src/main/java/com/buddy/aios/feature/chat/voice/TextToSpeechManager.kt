@@ -73,8 +73,11 @@ class TextToSpeechManager @Inject constructor(
             isInitialized = isSupported
 
             if (isSupported) {
+                tts?.setSpeechRate(0.85f)
+                tts?.setPitch(1.0f)
                 tts?.setOnUtteranceProgressListener(createProgressListener())
-                AppLogger.d(TAG, "TextToSpeech initialized successfully")
+                AppLogger.d(TAG, "TextToSpeech initialized successfully with speechRate=0.85f")
+
                 if (currentBuddyMode.canVoiceOutput) {
                     _state.value = TextToSpeechState.Idle
                 }

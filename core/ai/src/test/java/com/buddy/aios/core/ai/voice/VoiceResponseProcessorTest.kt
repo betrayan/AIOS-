@@ -1,10 +1,14 @@
 package com.buddy.aios.core.ai.voice
 
+import com.buddy.aios.core.ai.engine.AIChunk
 import com.buddy.aios.core.ai.engine.AIEngine
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.canVoiceInput
 import com.buddy.aios.core.domain.entity.canVoiceOutput
+import com.buddy.aios.core.domain.result.Result
+import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -37,28 +41,50 @@ class VoiceResponseProcessorTest {
     }
 
     @Test
-    fun `Test 2 - Markdown cleaned properly`() {
-        val markdownText = "# Header\nThis is **bold** and *italic* text with [Link](https://example.com)."
-        val cleaned = processor.cleanTextForSpeech(markdownText)
+    fun `Test 2 - Full response AI explanation considers entire answer`() = runTest {
+        val longResponse = "Python is a high-level programming language. It supports multiple paradigms. Python is widely used for web development, automation, data science, machine learning, and scripting. Its biggest advantages are readability and a massive library ecosystem."
+        val input = VoiceResponseProcessorInput(
+            userMessage = "What is Python?",
+            fullResponse = longResponse,
+        )
 
-        assertFalse(cleaned.contains("#"))
-        assertFalse(cleaned.contains("**"))
-        assertFalse(cleaned.contains("https://example.com"))
-        assertTrue(cleaned.contains("This is bold and italic text with Link."))
+        coEvery { aiEngine.complete(any()) } returns flowOf(
+            Result.Success(AIChunk(text = "Python is a versatile programming language popular for web development, data science, and AI because of its simple syntax and rich library ecosystem.", isComplete = true))
+        )
+
+        val result = processor.process(input)
+
+        assertTrue(result.isSummarized)
+        assertTrue(result.text.contains("Python is a versatile programming language"))
     }
 
     @Test
-    fun `Test 3 - Code blocks replaced with conversational code notification`() {
+    fun `Test 3 - Full context local fallback includes start middle and conclusion`() {
+        val longText = "Section 1 starts here. Section 2 is the middle body. Section 3 is the final conclusion."
+        val fullSummary = processor.extractFullContextLocalExplanation(longText)
+
+        assertTrue(fullSummary.contains("Section 1 starts here."))
+        assertTrue(fullSummary.contains("Section 2 is the middle body."))
+        assertTrue(fullSummary.contains("Section 3 is the final conclusion."))
+    }
+
+    @Test
+    fun `Test 4 - Code blocks are not read as code`() = runTest {
         val codeResponse = "Here is your solution:\n```python\ndef hello():\n    print('Hello World')\n```\nHope that helps!"
-        val cleaned = processor.cleanTextForSpeech(codeResponse)
+        val input = VoiceResponseProcessorInput(
+            userMessage = "Write a hello world in Python",
+            fullResponse = codeResponse,
+        )
 
-        assertFalse(cleaned.contains("def hello():"))
-        assertFalse(cleaned.contains("```"))
-        assertTrue(cleaned.contains("I've written the python snippet for you."))
+        val result = processor.process(input)
+
+        assertFalse(result.text.contains("def hello():"))
+        assertFalse(result.text.contains("```"))
+        assertTrue(result.text.contains("I've written the python solution for you on screen."))
     }
 
     @Test
-    fun `Test 4 - Directives and raw JSON stripped from speech`() {
+    fun `Test 5 - Directives and raw JSON stripped from speech`() {
         val textWithDirective = "Done! [BUDDY_ACTION:{\"tool\":\"TASK\",\"action\":\"CREATE\",\"title\":\"Study Java\"}] I have created your task."
         val cleaned = processor.cleanTextForSpeech(textWithDirective)
 
@@ -68,7 +94,7 @@ class VoiceResponseProcessorTest {
     }
 
     @Test
-    fun `Test 5 - URLs stripped from speech`() {
+    fun `Test 6 - URLs stripped from speech`() {
         val textWithUrl = "Visit https://google.com for more info."
         val cleaned = processor.cleanTextForSpeech(textWithUrl)
 
@@ -77,52 +103,28 @@ class VoiceResponseProcessorTest {
     }
 
     @Test
-    fun `Test 6 - Local summary fallback extracts first sentences`() {
-        val longText = "Docker is a containerization platform. It packages applications into isolated containers. Containers share the host kernel. Images are immutable templates."
-        val summary = processor.extractLocalSummaryFallback(longText)
-
-        assertTrue(summary.length <= VoiceResponseProcessor.SHORT_RESPONSE_THRESHOLD)
-        assertTrue(summary.contains("Docker is a containerization platform."))
-    }
-
-    @Test
-    fun `Test 7 - Long text uses local smart summarization zero network overhead`() = runTest {
-        val longResponse = "Docker is a containerization platform that allows developers to package applications and their dependencies into isolated containers. Containers share the host OS kernel while maintaining process isolation. Docker images are immutable templates used to create containers across different development environments."
-        val input = VoiceResponseProcessorInput(
-            userMessage = "Explain Docker",
-            fullResponse = longResponse,
-        )
-
-        val result = processor.process(input)
-
-        assertTrue(result.isSummarized)
-        assertTrue(result.text.contains("Docker is a containerization platform"))
-        assertTrue(result.text.length <= VoiceResponseProcessor.SHORT_RESPONSE_THRESHOLD)
-    }
-
-    @Test
-    fun `Test 8 - BuddyMode OFF prevents voice input and output`() {
+    fun `Test 7 - BuddyMode OFF prevents voice input and output`() {
         val mode = BuddyMode.OFF
         assertFalse(mode.canVoiceInput)
         assertFalse(mode.canVoiceOutput)
     }
 
     @Test
-    fun `Test 9 - BuddyMode SILENT prevents voice input and output`() {
+    fun `Test 8 - BuddyMode SILENT prevents voice input and output`() {
         val mode = BuddyMode.SILENT
         assertFalse(mode.canVoiceInput)
         assertFalse(mode.canVoiceOutput)
     }
 
     @Test
-    fun `Test 10 - BuddyMode QUIET permits user-initiated voice`() {
+    fun `Test 9 - BuddyMode QUIET permits user-initiated voice`() {
         val mode = BuddyMode.QUIET
         assertTrue(mode.canVoiceInput)
         assertTrue(mode.canVoiceOutput)
     }
 
     @Test
-    fun `Test 11 - BuddyMode ACTIVE permits full voice interaction`() {
+    fun `Test 10 - BuddyMode ACTIVE permits full voice interaction`() {
         val mode = BuddyMode.ACTIVE
         assertTrue(mode.canVoiceInput)
         assertTrue(mode.canVoiceOutput)
