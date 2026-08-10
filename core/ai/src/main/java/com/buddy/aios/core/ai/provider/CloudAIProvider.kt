@@ -46,13 +46,23 @@ class CloudAIProvider @Inject constructor(
 
         try {
             AppLogger.d(TAG, "Sending GenerateContent request to model: ${config.geminiModel}")
-            val response = geminiApi.generateContent(
+            var response = geminiApi.generateContent(
                 model = config.geminiModel,
                 apiKey = config.geminiApiKey,
                 body = request,
             )
 
+            if (response.code() == 429 && config.geminiModel != "gemini-flash-lite-latest") {
+                AppLogger.w(TAG, "Model ${config.geminiModel} hit 429 rate limit — retrying with fallback model gemini-flash-lite-latest")
+                response = geminiApi.generateContent(
+                    model = "gemini-flash-lite-latest",
+                    apiKey = config.geminiApiKey,
+                    body = request,
+                )
+            }
+
             val httpCode = response.code()
+
 
             when {
                 response.isSuccessful -> {

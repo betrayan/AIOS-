@@ -17,7 +17,7 @@ object AIConfigModule {
     fun provideAIProviderConfig(): AIProviderConfig {
         return AIProviderConfig(
             geminiApiKey = BuildConfig.GEMINI_API_KEY,
-            geminiModel = "gemini-flash-latest",
+            geminiModel = "gemini-flash-lite-latest",
             gemmaModelPath = BuildConfig.GEMMA_MODEL_PATH,
         )
     }

@@ -19,7 +19,7 @@ data class AIProviderConfig(
      * Gemini model identifier.
      * Default: gemini-2.0-flash-exp (fast, capable, free tier available)
      */
-    val geminiModel: String = "gemini-flash-latest",
+    val geminiModel: String = "gemini-flash-lite-latest",
 
     /**
      * Absolute path to the on-device Gemma model file (.task or .bin).
