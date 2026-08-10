@@ -3,6 +3,8 @@ package com.buddy.aios.feature.chat.presentation
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.buddy.aios.core.ai.voice.VoiceResponseProcessor
+import com.buddy.aios.core.ai.voice.VoiceResponseProcessorInput
 import com.buddy.aios.core.domain.entity.BuddyCapability
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.getCapabilities
@@ -37,6 +39,7 @@ class ChatViewModel @Inject constructor(
     private val sendMessageUseCase: SendMessageUseCase,
     private val conversationRepository: IConversationRepository,
     private val buddyModeRepository: IBuddyModeRepository,
+    private val voiceResponseProcessor: VoiceResponseProcessor,
     val voiceInputManager: VoiceInputManager,
     val ttsManager: TextToSpeechManager,
 ) : ViewModel() {
@@ -147,9 +150,19 @@ class ChatViewModel @Inject constructor(
                             )
                         }
 
-                        // Speak AI response if voice output is allowed in current BuddyMode
+                        // Process full response into a natural conversational spoken answer asynchronously
                         if (msg.content.isNotBlank() && currentCapabilities.value.allowVoiceInputOutput) {
-                            ttsManager.speak(msg.content)
+                            viewModelScope.launch {
+                                val input = VoiceResponseProcessorInput(
+                                    userMessage = content,
+                                    fullResponse = msg.content,
+                                    buddyMode = buddyModeRepository.getBuddyMode(),
+                                )
+                                val spokenResponse = voiceResponseProcessor.process(input)
+                                if (spokenResponse.text.isNotBlank() && currentCapabilities.value.allowVoiceInputOutput) {
+                                    ttsManager.speak(spokenResponse.text)
+                                }
+                            }
                         }
                     }
                     is Result.Error -> {
