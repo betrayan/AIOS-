@@ -1,0 +1,412 @@
+package com.buddy.aios.feature.settings.presentation
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.buddy.aios.core.domain.entity.BuddyMode
+import com.buddy.aios.core.domain.entity.PrivacyLevel
+import com.buddy.aios.core.ui.animation.clickableWithScale
+import com.buddy.aios.core.ui.components.AIOSLoadingIndicator
+import com.buddy.aios.core.ui.components.GlassCard
+import com.buddy.aios.core.ui.shapes.BuddyShapes
+import com.buddy.aios.core.ui.theme.BuddyColors
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var editedName by remember { mutableStateOf("") }
+    var showInterventionDemo by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BuddyColors.BackgroundRadialGradient)
+    ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Control Center", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Text("System preferences & AI behavior", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextSecondary)
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = BuddyColors.SurfaceDark.copy(alpha = 0.85f)),
+                )
+            },
+            containerColor = Color.Transparent,
+        ) { padding ->
+            if (state.isLoading) {
+                AIOSLoadingIndicator()
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp)
+                ) {
+                    // 1. Profile Section
+                    item {
+                        Text("USER PROFILE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Person, contentDescription = null, tint = BuddyColors.PurpleLight, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text(state.userProfile.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                        Text("Persona: ${state.userProfile.personaPreference}", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                    }
+                                }
+                                TextButton(
+                                    onClick = {
+                                        editedName = state.userProfile.name
+                                        showEditNameDialog = true
+                                    }
+                                ) {
+                                    Text("Edit Name", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Buddy Operating Mode Selector Segmented Pill Cards
+                    item {
+                        Text("BUDDY OPERATING MODE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ModeCard(
+                                title = "ACTIVE",
+                                description = "Buddy can proactively help you, speak, and send reminders.",
+                                isSelected = state.buddyMode == BuddyMode.ACTIVE,
+                                activeColor = BuddyColors.ActiveGreen,
+                                onClick = { viewModel.onSetBuddyMode(BuddyMode.ACTIVE) }
+                            )
+                            ModeCard(
+                                title = "QUIET",
+                                description = "Buddy speaks less and waits for explicit requests.",
+                                isSelected = state.buddyMode == BuddyMode.QUIET,
+                                activeColor = BuddyColors.QuietYellow,
+                                onClick = { viewModel.onSetBuddyMode(BuddyMode.QUIET) }
+                            )
+                            ModeCard(
+                                title = "SILENT",
+                                description = "Voice output is disabled. Tasks, memory, and analytics continue.",
+                                isSelected = state.buddyMode == BuddyMode.SILENT,
+                                activeColor = BuddyColors.SilentBlue,
+                                onClick = { viewModel.onSetBuddyMode(BuddyMode.SILENT) }
+                            )
+                            ModeCard(
+                                title = "OFF",
+                                description = "AIOS is completely inactive. No voice, reminders, or background activity.",
+                                isSelected = state.buddyMode == BuddyMode.OFF,
+                                activeColor = BuddyColors.OffGray,
+                                onClick = { viewModel.onSetBuddyMode(BuddyMode.OFF) }
+                            )
+                        }
+                    }
+
+                    // 3. Privacy & AI Engine Switcher Card
+                    item {
+                        Text("PRIVACY & AI ENGINE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PrivacyCard(
+                                title = "LOCAL_ONLY (Default)",
+                                statusBadge = "● LOCAL",
+                                description = "100% On-Device. Zero bytes sent to cloud. Requires local model.",
+                                isSelected = state.userProfile.privacyLevel == PrivacyLevel.LOCAL_ONLY,
+                                onClick = { viewModel.onSetPrivacyLevel(PrivacyLevel.LOCAL_ONLY) }
+                            )
+                            PrivacyCard(
+                                title = "CLOUD_OPT_IN (Gemini)",
+                                statusBadge = "● CLOUD OPT-IN",
+                                description = "Enables Cloud AI (Gemini 2.5 Flash) for complex reasoning.",
+                                isSelected = state.userProfile.privacyLevel == PrivacyLevel.CLOUD_OPT_IN,
+                                onClick = { viewModel.onSetPrivacyLevel(PrivacyLevel.CLOUD_OPT_IN) }
+                            )
+                        }
+                    }
+
+                    // 4. Voice & Audio Settings
+                    item {
+                        Text("VOICE & AUDIO SETTINGS", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = BuddyColors.Cyan)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text("Voice Output", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            Text(if (state.buddyMode == BuddyMode.SILENT || state.buddyMode == BuddyMode.OFF) "Disabled in ${state.buddyMode} mode" else "Enabled (Text-to-Speech)", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                        }
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Mic, contentDescription = null, tint = BuddyColors.PurpleLight)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text("Speech Recognition", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            Text("Android Native SpeechRecognizer", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 5. Analytics & Digital Wellbeing
+                    item {
+                        Text("ANALYTICS & DIGITAL WELLBEING", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Smartphone, contentDescription = null, tint = BuddyColors.Rose)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column {
+                                            Text("Screen Time Insight", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            Text("You spent 48 minutes on YouTube today.", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                        }
+                                    }
+                                    TextButton(onClick = { showInterventionDemo = true }) {
+                                        Text("Preview", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 6. System Info
+                    item {
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = BuddyColors.PurpleLight)
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text("AIOS Companion Edition", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                    Text("Version 1.0.0 • Clean Architecture", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextMuted)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Edit Name Dialog
+    if (showEditNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditNameDialog = false },
+            title = { Text("Edit Preferred Name", color = Color.White) },
+            text = {
+                OutlinedTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = BuddyColors.Cyan,
+                        unfocusedBorderColor = BuddyColors.GlassBorder,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.onUpdateUserName(editedName.trim())
+                        showEditNameDialog = false
+                    }
+                ) {
+                    Text("Save", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) {
+                    Text("Cancel", color = BuddyColors.TextMuted)
+                }
+            },
+            containerColor = BuddyColors.SurfaceDark
+        )
+    }
+
+    // Distraction Intervention Dialog Demo
+    if (showInterventionDemo) {
+        AlertDialog(
+            onDismissRequest = { showInterventionDemo = false },
+            title = { Text("Distraction Intervention", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = { Text("You've been on YouTube for 20 minutes. Do you really need more time?", color = BuddyColors.TextSecondary) },
+            confirmButton = {
+                TextButton(onClick = { showInterventionDemo = false }) {
+                    Text("I'm Done", color = BuddyColors.ActiveGreen, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInterventionDemo = false }) {
+                    Text("Continue", color = BuddyColors.TextMuted)
+                }
+            },
+            containerColor = BuddyColors.SurfaceDark
+        )
+    }
+}
+
+@Composable
+private fun ModeCard(
+    title: String,
+    description: String,
+    isSelected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickableWithScale(onClick = onClick),
+        backgroundColor = if (isSelected) activeColor.copy(alpha = 0.20f) else BuddyColors.SurfaceDark.copy(alpha = 0.70f),
+        borderWidth = if (isSelected) 2.dp else 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(if (isSelected) activeColor else BuddyColors.TextMuted, shape = BuddyShapes.Pill)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                Spacer(Modifier.height(2.dp))
+                Text(description, style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrivacyCard(
+    title: String,
+    statusBadge: String,
+    description: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickableWithScale(onClick = onClick),
+        backgroundColor = if (isSelected) BuddyColors.PurpleGlow.copy(alpha = 0.25f) else BuddyColors.SurfaceDark.copy(alpha = 0.70f),
+        borderWidth = if (isSelected) 2.dp else 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Shield,
+                contentDescription = null,
+                tint = if (isSelected) BuddyColors.Cyan else BuddyColors.TextMuted,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text(title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                    Text(
+                        text = statusBadge,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = if (isSelected) BuddyColors.Cyan else BuddyColors.TextMuted,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(description, style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+            }
+        }
+    }
+}

@@ -1,0 +1,220 @@
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by net.rubygrapefruit.platform.internal.NativeLibraryLoader in an unnamed module (file:/C:/Users/mlvij/.gradle/wrapper/dists/gradle-8.10.2-bin/a04bxjujx95o3nb99gddekhwo/gradle-8.10.2/lib/native-platform-0.22-milestone-26.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+Starting a Gradle Daemon, 10 busy and 19 stopped Daemons could not be reused, use --status for details
+Calculating task graph as no cached configuration is available for tasks: :feature:chat:compileDebugKotlin
+
+> Configure project :app
+Kotlin does not yet support 24 JDK target, falling back to Kotlin JVM_21 JVM target
+
+> Task :build-logic:plugins:checkKotlinGradlePluginConfigurationErrors
+
+> Task :build-logic:plugins:compileKotlin
+Kotlin does not yet support 24 JDK target, falling back to Kotlin JVM_21 JVM target
+
+> Task :build-logic:plugins:compileKotlin FROM-CACHE
+> Task :build-logic:plugins:compileJava NO-SOURCE
+> Task :build-logic:plugins:pluginDescriptors UP-TO-DATE
+> Task :build-logic:plugins:processResources UP-TO-DATE
+> Task :build-logic:plugins:classes UP-TO-DATE
+> Task :build-logic:plugins:jar UP-TO-DATE
+> Task :core:network:preBuild UP-TO-DATE
+> Task :core:common:preBuild UP-TO-DATE
+> Task :core:network:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:common:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:security:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:ai:preBuild UP-TO-DATE
+> Task :core:security:preBuild UP-TO-DATE
+> Task :core:data:preBuild UP-TO-DATE
+> Task :core:data:preDebugBuild UP-TO-DATE
+> Task :core:ai:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:common:preDebugBuild UP-TO-DATE
+> Task :core:data:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:domain:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:network:preDebugBuild UP-TO-DATE
+> Task :core:analytics:preBuild UP-TO-DATE
+> Task :core:analytics:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:security:preDebugBuild UP-TO-DATE
+> Task :core:database:preBuild UP-TO-DATE
+> Task :core:database:preDebugBuild UP-TO-DATE
+> Task :core:ai:preDebugBuild UP-TO-DATE
+> Task :core:analytics:preDebugBuild UP-TO-DATE
+> Task :core:domain:processResources NO-SOURCE
+> Task :core:network:generateDebugResValues FROM-CACHE
+> Task :core:ai:generateDebugResValues FROM-CACHE
+> Task :core:database:generateDebugResValues FROM-CACHE
+> Task :core:analytics:generateDebugResValues FROM-CACHE
+> Task :core:common:generateDebugResValues FROM-CACHE
+> Task :core:security:generateDebugResValues FROM-CACHE
+> Task :core:network:generateDebugResources FROM-CACHE
+> Task :core:security:generateDebugResources FROM-CACHE
+> Task :core:analytics:generateDebugResources FROM-CACHE
+> Task :core:data:generateDebugResValues FROM-CACHE
+> Task :core:common:generateDebugResources FROM-CACHE
+> Task :core:ai:generateDebugResources FROM-CACHE
+> Task :core:data:generateDebugResources FROM-CACHE
+> Task :core:network:packageDebugResources FROM-CACHE
+> Task :core:analytics:packageDebugResources FROM-CACHE
+> Task :core:ai:packageDebugResources FROM-CACHE
+> Task :core:common:packageDebugResources FROM-CACHE
+> Task :core:security:packageDebugResources FROM-CACHE
+> Task :core:data:packageDebugResources FROM-CACHE
+> Task :core:security:javaPreCompileDebug FROM-CACHE
+> Task :core:network:parseDebugLocalResources FROM-CACHE
+> Task :core:ai:javaPreCompileDebug FROM-CACHE
+> Task :core:database:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:ai:parseDebugLocalResources FROM-CACHE
+> Task :core:common:javaPreCompileDebug FROM-CACHE
+> Task :core:analytics:javaPreCompileDebug FROM-CACHE
+> Task :core:network:javaPreCompileDebug FROM-CACHE
+> Task :core:ui:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:ui:preBuild UP-TO-DATE
+> Task :core:ui:preDebugBuild UP-TO-DATE
+> Task :feature:chat:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:data:parseDebugLocalResources FROM-CACHE
+> Task :core:security:parseDebugLocalResources FROM-CACHE
+> Task :core:database:generateDebugResources FROM-CACHE
+> Task :core:data:javaPreCompileDebug FROM-CACHE
+> Task :feature:chat:preBuild UP-TO-DATE
+> Task :feature:chat:preDebugBuild UP-TO-DATE
+> Task :core:common:parseDebugLocalResources FROM-CACHE
+> Task :core:analytics:parseDebugLocalResources FROM-CACHE
+> Task :core:ui:generateDebugResValues FROM-CACHE
+> Task :core:database:javaPreCompileDebug FROM-CACHE
+> Task :core:network:generateDebugRFile FROM-CACHE
+> Task :core:ai:generateDebugRFile FROM-CACHE
+> Task :core:ui:javaPreCompileDebug FROM-CACHE
+> Task :feature:chat:generateDebugResValues FROM-CACHE
+> Task :core:ui:generateDebugResources FROM-CACHE
+> Task :core:data:generateDebugRFile FROM-CACHE
+> Task :core:security:generateDebugRFile FROM-CACHE
+> Task :feature:chat:generateDebugResources FROM-CACHE
+> Task :core:analytics:generateDebugRFile FROM-CACHE
+> Task :core:common:generateDebugRFile FROM-CACHE
+> Task :core:database:packageDebugResources FROM-CACHE
+> Task :core:ui:packageDebugResources FROM-CACHE
+> Task :core:database:parseDebugLocalResources FROM-CACHE
+> Task :feature:chat:packageDebugResources FROM-CACHE
+> Task :core:ui:parseDebugLocalResources FROM-CACHE
+> Task :feature:chat:parseDebugLocalResources FROM-CACHE
+> Task :core:database:generateDebugRFile FROM-CACHE
+> Task :core:ui:generateDebugRFile FROM-CACHE
+> Task :feature:chat:generateDebugRFile FROM-CACHE
+> Task :core:domain:compileKotlin FROM-CACHE
+> Task :core:domain:compileJava NO-SOURCE
+> Task :core:domain:classes UP-TO-DATE
+> Task :core:common:kspDebugKotlin FROM-CACHE
+> Task :core:common:compileDebugKotlin FROM-CACHE
+> Task :core:domain:jar
+> Task :core:common:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:common:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:common:bundleLibRuntimeToJarDebug
+> Task :core:common:bundleLibCompileToJarDebug
+> Task :core:analytics:kspDebugKotlin NO-SOURCE
+> Task :core:analytics:compileDebugKotlin NO-SOURCE
+> Task :core:analytics:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:analytics:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:analytics:bundleLibCompileToJarDebug
+> Task :core:security:kspDebugKotlin FROM-CACHE
+> Task :core:security:compileDebugKotlin FROM-CACHE
+> Task :core:ui:compileDebugKotlin FROM-CACHE
+> Task :core:ui:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:security:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:ui:bundleLibCompileToJarDebug
+> Task :core:security:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:security:bundleLibRuntimeToJarDebug
+> Task :core:security:bundleLibCompileToJarDebug
+> Task :core:network:kspDebugKotlin FROM-CACHE
+> Task :core:network:compileDebugKotlin FROM-CACHE
+> Task :core:database:kspDebugKotlin FROM-CACHE
+> Task :core:network:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:network:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:database:compileDebugKotlin FROM-CACHE
+> Task :core:network:bundleLibRuntimeToJarDebug
+> Task :core:network:bundleLibCompileToJarDebug
+> Task :core:ai:kspDebugKotlin FROM-CACHE
+> Task :core:database:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:ai:compileDebugKotlin FROM-CACHE
+> Task :core:database:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:ai:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:database:bundleLibRuntimeToJarDebug
+> Task :core:database:bundleLibCompileToJarDebug
+> Task :core:ai:transformDebugClassesWithAsm FROM-CACHE
+> Task :core:ai:bundleLibRuntimeToJarDebug
+> Task :core:ai:bundleLibCompileToJarDebug
+> Task :core:data:kspDebugKotlin FROM-CACHE
+> Task :core:data:compileDebugKotlin FROM-CACHE
+> Task :core:data:compileDebugJavaWithJavac FROM-CACHE
+> Task :core:data:transformDebugClassesWithAsm UP-TO-DATE
+> Task :core:data:bundleLibCompileToJarDebug UP-TO-DATE
+
+> Task :feature:chat:kspDebugKotlin
+e: java.nio.file.NoSuchFileException: D:\PROJECTS-V2\AIOS\feature\chat\build\generated\ksp\debug\java\byRounds
+	at java.base/sun.nio.fs.WindowsException.translateToIOException(WindowsException.java:85)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:103)
+	at java.base/sun.nio.fs.WindowsException.rethrowAsIOException(WindowsException.java:108)
+	at java.base/sun.nio.fs.WindowsFileCopy.copy(WindowsFileCopy.java:99)
+	at java.base/sun.nio.fs.WindowsFileSystemProvider.copy(WindowsFileSystemProvider.java:278)
+	at java.base/java.nio.file.Files.copy(Files.java:1189)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:80)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalUtilKt.copyWithTimestamp(IncrementalUtil.kt:71)
+	at com.google.devtools.ksp.common.IncrementalContextBase.updateOutputs(IncrementalContextBase.kt:349)
+	at com.google.devtools.ksp.common.IncrementalContextBase.access$updateOutputs(IncrementalContextBase.kt:62)
+	at com.google.devtools.ksp.common.IncrementalContextBase$updateCachesAndOutputs$1.invoke(IncrementalContextBase.kt:484)
+	at com.google.devtools.ksp.common.IncrementalContextBase$updateCachesAndOutputs$1.invoke(IncrementalContextBase.kt:428)
+	at com.google.devtools.ksp.common.IncrementalContextBase.closeFilesOnException(IncrementalContextBase.kt:408)
+	at com.google.devtools.ksp.common.IncrementalContextBase.updateCachesAndOutputs(IncrementalContextBase.kt:428)
+	at com.google.devtools.ksp.AbstractKotlinSymbolProcessingExtension.doAnalysis(KotlinSymbolProcessingExtension.kt:376)
+	at org.jetbrains.kotlin.cli.jvm.compiler.TopDownAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration(TopDownAnalyzerFacadeForJVM.kt:112)
+	at org.jetbrains.kotlin.cli.jvm.compiler.TopDownAnalyzerFacadeForJVM.analyzeFilesWithJavaIntegration$default(TopDownAnalyzerFacadeForJVM.kt:75)
+	at org.jetbrains.kotlin.cli.jvm.compiler.KotlinToJVMBytecodeCompiler.analyze$lambda$12(KotlinToJVMBytecodeCompiler.kt:373)
+	at org.jetbrains.kotlin.cli.common.messages.AnalyzerWithCompilerReport.analyzeAndReport(AnalyzerWithCompilerReport.kt:112)
+	at org.jetbrains.kotlin.cli.jvm.compiler.KotlinToJVMBytecodeCompiler.analyze(KotlinToJVMBytecodeCompiler.kt:364)
+	at org.jetbrains.kotlin.cli.jvm.compiler.KotlinToJVMBytecodeCompiler.repeatAnalysisIfNeeded(KotlinToJVMBytecodeCompiler.kt:282)
+	at org.jetbrains.kotlin.cli.jvm.compiler.KotlinToJVMBytecodeCompiler.runFrontendAndGenerateIrUsingClassicFrontend(KotlinToJVMBytecodeCompiler.kt:195)
+	at org.jetbrains.kotlin.cli.jvm.compiler.KotlinToJVMBytecodeCompiler.compileModules$cli(KotlinToJVMBytecodeCompiler.kt:106)
+	at org.jetbrains.kotlin.cli.jvm.K2JVMCompiler.doExecute(K2JVMCompiler.kt:170)
+	at org.jetbrains.kotlin.cli.jvm.K2JVMCompiler.doExecute(K2JVMCompiler.kt:43)
+	at org.jetbrains.kotlin.cli.common.CLICompiler.execImpl(CLICompiler.kt:103)
+	at org.jetbrains.kotlin.cli.common.CLICompiler.execImpl(CLICompiler.kt:49)
+	at org.jetbrains.kotlin.cli.common.CLITool.exec(CLITool.kt:101)
+	at org.jetbrains.kotlin.daemon.CompileServiceImpl.compile(CompileServiceImpl.kt:1555)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at java.rmi/sun.rmi.server.UnicastServerRef.dispatch(UnicastServerRef.java:351)
+	at java.rmi/sun.rmi.transport.Transport.serviceCall(Transport.java:166)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(TCPTransport.java:543)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(TCPTransport.java:744)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(TCPTransport.java:623)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1095)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:619)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+
+
+> Task :feature:chat:kspDebugKotlin FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':feature:chat:kspDebugKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Internal compiler error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 4m 44s
+100 actionable tasks: 15 executed, 80 from cache, 5 up-to-date
+Configuration cache entry stored.
