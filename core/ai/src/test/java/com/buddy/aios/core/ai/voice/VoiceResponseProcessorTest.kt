@@ -1,14 +1,10 @@
 package com.buddy.aios.core.ai.voice
 
 import com.buddy.aios.core.ai.engine.AIEngine
-import com.buddy.aios.core.ai.engine.AIChunk
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.canVoiceInput
 import com.buddy.aios.core.domain.entity.canVoiceOutput
-import com.buddy.aios.core.domain.result.Result
-import io.mockk.coEvery
 import io.mockk.mockk
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -90,21 +86,18 @@ class VoiceResponseProcessorTest {
     }
 
     @Test
-    fun `Test 7 - AI summarization succeeds for long text`() = runTest {
+    fun `Test 7 - Long text uses local smart summarization zero network overhead`() = runTest {
         val longResponse = "Docker is a containerization platform that allows developers to package applications and their dependencies into isolated containers. Containers share the host OS kernel while maintaining process isolation. Docker images are immutable templates used to create containers across different development environments."
         val input = VoiceResponseProcessorInput(
             userMessage = "Explain Docker",
             fullResponse = longResponse,
         )
 
-        coEvery { aiEngine.complete(any()) } returns flowOf(
-            Result.Success(AIChunk(text = "Docker packages applications into isolated containers so they run consistently everywhere.", isComplete = true))
-        )
-
         val result = processor.process(input)
 
         assertTrue(result.isSummarized)
-        assertTrue(result.text.contains("Docker packages applications"))
+        assertTrue(result.text.contains("Docker is a containerization platform"))
+        assertTrue(result.text.length <= VoiceResponseProcessor.SHORT_RESPONSE_THRESHOLD)
     }
 
     @Test

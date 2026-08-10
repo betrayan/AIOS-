@@ -1,14 +1,9 @@
 package com.buddy.aios.core.ai.voice
 
 import com.buddy.aios.core.ai.engine.AIEngine
-import com.buddy.aios.core.ai.engine.AIPrompt
 import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.domain.entity.BuddyMode
-import com.buddy.aios.core.domain.entity.Message
 import com.buddy.aios.core.domain.entity.PrivacyLevel
-import com.buddy.aios.core.domain.result.Result
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,12 +24,11 @@ data class VoiceResponseProcessorInput(
 /**
  * Transforms full detailed on-screen AI responses into natural, concise spoken answers.
  *
- * Principles:
- * - Does NOT replace on-screen detailed text.
- * - Does NOT run extra AI requests for short responses (<= 250 chars).
- * - Strips code blocks, URLs, markdown, directives, raw JSON, IDs.
- * - Summarizes long text into 1-4 natural conversational sentences.
- * - Provides immediate, non-blocking local fallback on timeout/failure.
+ * Designed to be 100% quota-safe and zero-latency:
+ * - Uses instant local sentence & markdown processing first to avoid doubling Cloud AI API quota usage.
+ * - Strips code blocks, URLs, markdown headers, raw JSON, IDs, and directives.
+ * - Extracts core conversational sentences (1-3 sentences, <= 280 chars) for instant TTS playback.
+ * - Completely eliminates API rate limits and cloud quota exhaustion during voice interactions.
  */
 @Singleton
 class VoiceResponseProcessor @Inject constructor(
@@ -47,62 +41,28 @@ class VoiceResponseProcessor @Inject constructor(
             return SpokenResponse(text = "", isSummarized = false)
         }
 
-        // Step 1: Clean local text (remove markdown, directives, code, URLs)
+        // Step 1: Clean local text (remove markdown, directives, code blocks, URLs, JSON)
         val cleanedText = cleanTextForSpeech(rawFullResponse)
         if (cleanedText.isBlank()) {
             return SpokenResponse(text = "I've updated that for you.", isSummarized = false)
         }
 
-        // Step 2: Short response optimization (<= 250 characters)
+        // Step 2: Short response optimization (<= 280 characters)
         if (cleanedText.length <= SHORT_RESPONSE_THRESHOLD) {
             AppLogger.d(TAG, "Short response detected (${cleanedText.length} chars) — using directly for speech")
             return SpokenResponse(text = cleanedText, isSummarized = false)
         }
 
-        // Step 3: Attempt AI-based natural conversational summarization with 5-second timeout
-        val aiSpokenSummary = tryAiSummarize(input, rawFullResponse)
-        if (!aiSpokenSummary.isNullOrBlank()) {
-            val cleanedAiSummary = cleanTextForSpeech(aiSpokenSummary)
-            if (cleanedAiSummary.isNotBlank()) {
-                AppLogger.d(TAG, "AI spoken summarization successful (${cleanedAiSummary.length} chars)")
-                return SpokenResponse(text = cleanedAiSummary, isSummarized = true)
-            }
+        // Step 3: Instant local smart summary (extract first 1-3 core sentences up to 280 chars)
+        val localSummary = extractLocalSummaryFallback(cleanedText)
+        if (localSummary.isNotBlank()) {
+            AppLogger.d(TAG, "Local smart summarization successful (${localSummary.length} chars) — zero network overhead")
+            return SpokenResponse(text = localSummary, isSummarized = true)
         }
 
-        // Step 4: Local fallback (extract first 1-3 sentences up to 250 chars)
-        AppLogger.w(TAG, "AI summarization unavailable or timed out — using smart local text extraction fallback")
-        val fallbackText = extractLocalSummaryFallback(cleanedText)
-        return SpokenResponse(text = fallbackText, isSummarized = false, isFallback = true)
-    }
-
-    private suspend fun tryAiSummarize(input: VoiceResponseProcessorInput, fullResponse: String): String? {
-        return withTimeoutOrNull(AI_SUMMARIZE_TIMEOUT_MS) {
-            try {
-                val promptText = VOICE_SUMMARY_SYSTEM_PROMPT
-                    .replace("{FULL_AI_RESPONSE}", fullResponse)
-                    .replace("{USER_MESSAGE}", input.userMessage)
-                    .replace("{TOOL_RESULT}", input.toolResultText ?: "None")
-
-                val prompt = AIPrompt(
-                    userMessage = input.userMessage,
-                    systemInstruction = promptText,
-                    conversationHistory = emptyList(),
-                    temperature = 0.5f,
-                    maxOutputTokens = 150,
-                )
-
-                var summary = ""
-                aiEngine.complete(prompt).collect { chunkResult ->
-                    if (chunkResult is Result.Success) {
-                        summary += chunkResult.value.text
-                    }
-                }
-                summary.trim()
-            } catch (e: Exception) {
-                AppLogger.w(TAG, "Exception during AI voice summarization: ${e.message}")
-                null
-            }
-        }
+        // Step 4: Ultimate safe fallback
+        val safeFallback = cleanedText.take(SHORT_RESPONSE_THRESHOLD).trim()
+        return SpokenResponse(text = safeFallback, isSummarized = false, isFallback = true)
     }
 
     /**
@@ -146,15 +106,17 @@ class VoiceResponseProcessor @Inject constructor(
     }
 
     /**
-     * Extracts first 1-3 sentences up to 250 chars as local non-blocking fallback.
+     * Extracts first 1-3 sentences up to 280 chars as instant, non-blocking local summary.
      */
     fun extractLocalSummaryFallback(cleanedText: String): String {
         val sentences = cleanedText.split(Regex("""(?<=[.!?])\s+"""))
         val sb = StringBuilder()
         for (sentence in sentences) {
-            if (sb.length + sentence.length + 1 <= SHORT_RESPONSE_THRESHOLD || sb.isEmpty()) {
+            val trimmedSentence = sentence.trim()
+            if (trimmedSentence.isBlank()) continue
+            if (sb.length + trimmedSentence.length + 1 <= SHORT_RESPONSE_THRESHOLD || sb.isEmpty()) {
                 if (sb.isNotEmpty()) sb.append(" ")
-                sb.append(sentence)
+                sb.append(trimmedSentence)
             } else {
                 break
             }
@@ -164,8 +126,7 @@ class VoiceResponseProcessor @Inject constructor(
 
     companion object {
         private const val TAG = "VoiceResponseProcessor"
-        const val SHORT_RESPONSE_THRESHOLD = 250
-        const val AI_SUMMARIZE_TIMEOUT_MS = 5000L
+        const val SHORT_RESPONSE_THRESHOLD = 280
 
         private val DIRECTIVE_REGEX = Regex("""\[BUDDY_ACTION:(\{.*?\})\]""", RegexOption.DOT_MATCHES_ALL)
         private val JSON_BLOCK_REGEX = Regex("""\{"tool":.*?"\}""", RegexOption.DOT_MATCHES_ALL)
@@ -174,45 +135,5 @@ class VoiceResponseProcessor @Inject constructor(
         private val MD_LINK_REGEX = Regex("""\[([^]]+)]\([^)]+\)""")
         private val MD_HEADER_REGEX = Regex("""(?m)^#{1,6}\s+""")
         private val LIST_MARKER_REGEX = Regex("""(?m)^\s*[*%\-]\s+|^\s*\d+\.\s+""")
-
-        val VOICE_SUMMARY_SYSTEM_PROMPT = """
-            You are the spoken-response layer of AIOS, a personal AI companion.
-            The user is having a natural conversation with AIOS.
-            Your job is NOT to rewrite the entire answer.
-            Convert the full AI response into a concise spoken response.
-
-            Rules:
-            - Never read the full response word-for-word.
-            - Summarize the important information.
-            - Directly answer what the user actually asked.
-            - Normally use 1–4 sentences.
-            - Sound natural and conversational.
-            - Speak like a helpful intelligent companion.
-            - Do not sound like a document, article, or presentation.
-            - Do not mention "the response", "the text", or "the screen".
-            - Do not mention headings or sections.
-            - Do not read markdown.
-            - Do not read bullet points as a list unless the user specifically asks for a list.
-            - Do not read code.
-            - Do not read URLs.
-            - Do not read citations.
-            - Preserve important dates, times, numbers, warnings, and conclusions.
-            - If an action was completed, clearly confirm it.
-            - If something failed, clearly explain what failed and what the user should do.
-            - For casual conversation, respond naturally and briefly.
-            - If the user explicitly asks for a detailed explanation, provide a slightly longer spoken explanation.
-            - Never invent information that is not present in the original response.
-
-            Full AI response:
-            {FULL_AI_RESPONSE}
-
-            User's original request:
-            {USER_MESSAGE}
-
-            Tool result, if any:
-            {TOOL_RESULT}
-
-            Return ONLY the spoken response.
-        """.trimIndent()
     }
 }
