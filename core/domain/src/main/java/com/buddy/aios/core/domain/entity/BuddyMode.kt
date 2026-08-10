@@ -62,3 +62,10 @@ fun BuddyMode.getCapabilities(): BuddyCapability {
         )
     }
 }
+
+val BuddyMode.canVoiceInput: Boolean
+    get() = getCapabilities().allowVoiceInputOutput
+
+val BuddyMode.canVoiceOutput: Boolean
+    get() = getCapabilities().allowVoiceInputOutput
+

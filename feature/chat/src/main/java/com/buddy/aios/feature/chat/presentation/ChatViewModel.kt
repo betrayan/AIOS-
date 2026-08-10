@@ -14,8 +14,9 @@ import com.buddy.aios.core.domain.result.Result
 import com.buddy.aios.core.domain.usecase.ObserveMessagesUseCase
 import com.buddy.aios.core.domain.usecase.SendMessageUseCase
 import com.buddy.aios.feature.chat.voice.TextToSpeechManager
-import com.buddy.aios.feature.chat.voice.VoiceManager
-import com.buddy.aios.feature.chat.voice.VoiceState
+import com.buddy.aios.feature.chat.voice.TextToSpeechState
+import com.buddy.aios.feature.chat.voice.VoiceInputManager
+import com.buddy.aios.feature.chat.voice.VoiceInputState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,7 +37,7 @@ class ChatViewModel @Inject constructor(
     private val sendMessageUseCase: SendMessageUseCase,
     private val conversationRepository: IConversationRepository,
     private val buddyModeRepository: IBuddyModeRepository,
-    val voiceManager: VoiceManager,
+    val voiceInputManager: VoiceInputManager,
     val ttsManager: TextToSpeechManager,
 ) : ViewModel() {
 
@@ -53,7 +54,8 @@ class ChatViewModel @Inject constructor(
 
     private val _streamingPartialText = MutableStateFlow<String?>(null)
 
-    val voiceState: StateFlow<VoiceState> = voiceManager.voiceState
+    val voiceInputState: StateFlow<VoiceInputState> = voiceInputManager.state
+    val ttsState: StateFlow<TextToSpeechState> = ttsManager.state
 
     val currentCapabilities: StateFlow<BuddyCapability> = buddyModeRepository.observeCapabilities()
         .catch { emit(BuddyMode.ACTIVE.getCapabilities()) }
@@ -81,12 +83,15 @@ class ChatViewModel @Inject constructor(
             .launchIn(viewModelScope)
 
         // Observe voice recognizer results
-        voiceManager.voiceState
+        voiceInputManager.state
             .onEach { state ->
                 when (state) {
-                    is VoiceState.PartialResult -> _inputText.value = state.text
-                    is VoiceState.FinalResult -> _inputText.value = state.text
-                    is VoiceState.Error -> {
+                    is VoiceInputState.PartialResult -> _inputText.value = state.text
+                    is VoiceInputState.FinalResult -> {
+                        _inputText.value = state.text
+                        onSendMessage()
+                    }
+                    is VoiceInputState.Error -> {
                         _uiState.value = ChatUiState.Error(
                             message = "Voice input issue",
                             secondaryMessage = state.message
@@ -103,16 +108,22 @@ class ChatViewModel @Inject constructor(
     }
 
     fun toggleVoiceInput() {
-        if (voiceState.value is VoiceState.Listening) {
-            voiceManager.stopListening()
+        // Interruption rule: stop ongoing TTS if speaking
+        ttsManager.stop()
+
+        if (voiceInputState.value is VoiceInputState.Listening || voiceInputState.value is VoiceInputState.PartialResult) {
+            voiceInputManager.stopListening()
         } else {
-            voiceManager.startListening()
+            voiceInputManager.startListening()
         }
     }
 
     fun onSendMessage() {
         val content = _inputText.value.trim()
         if (content.isBlank() || _isStreaming.value) return
+
+        // Interruption rule: stop ongoing TTS when new message is sent
+        ttsManager.stop()
 
         _inputText.value = ""
         _isStreaming.value = true
@@ -135,6 +146,8 @@ class ChatViewModel @Inject constructor(
                                 streamingPartialText = msg.content
                             )
                         }
+
+                        // Speak AI response if voice output is allowed in current BuddyMode
                         if (msg.content.isNotBlank() && currentCapabilities.value.allowVoiceInputOutput) {
                             ttsManager.speak(msg.content)
                         }
@@ -199,7 +212,7 @@ class ChatViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        voiceManager.stopListening()
-        ttsManager.shutdown()
+        voiceInputManager.stopListening()
+        ttsManager.stop()
     }
 }

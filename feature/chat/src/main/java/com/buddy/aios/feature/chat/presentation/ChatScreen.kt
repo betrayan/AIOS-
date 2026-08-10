@@ -20,7 +20,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +45,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -87,7 +87,8 @@ import com.buddy.aios.core.ui.components.OrbState
 import com.buddy.aios.core.ui.components.VoiceWaveform
 import com.buddy.aios.core.ui.shapes.BuddyShapes
 import com.buddy.aios.core.ui.theme.BuddyColors
-import com.buddy.aios.feature.chat.voice.VoiceState
+import com.buddy.aios.feature.chat.voice.TextToSpeechState
+import com.buddy.aios.feature.chat.voice.VoiceInputState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -104,10 +105,14 @@ fun ChatScreen(
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
     val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
     val capabilities by viewModel.currentCapabilities.collectAsStateWithLifecycle()
-    val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
+    val voiceInputState by viewModel.voiceInputState.collectAsStateWithLifecycle()
+    val ttsState by viewModel.ttsState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    val isListening = voiceInputState is VoiceInputState.Listening || voiceInputState is VoiceInputState.PartialResult
+    val isSpeaking = ttsState is TextToSpeechState.Speaking
 
     // Audio record permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -138,7 +143,13 @@ fun ChatScreen(
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 32.dp, orbState = if (isStreaming || uiState is ChatUiState.Thinking) OrbState.THINKING else OrbState.IDLE)
+                            val orbStatus = when {
+                                isListening -> OrbState.LISTENING
+                                isSpeaking -> OrbState.SPEAKING
+                                isStreaming || uiState is ChatUiState.Thinking -> OrbState.THINKING
+                                else -> OrbState.IDLE
+                            }
+                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 32.dp, orbState = orbStatus)
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(
@@ -147,15 +158,27 @@ fun ChatScreen(
                                     color = Color.White
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    val statusDotColor = when {
+                                        isListening -> BuddyColors.Rose
+                                        isSpeaking -> BuddyColors.PurpleLight
+                                        isStreaming || uiState is ChatUiState.Thinking -> BuddyColors.Cyan
+                                        else -> BuddyColors.ActiveGreen
+                                    }
+                                    val statusText = when {
+                                        isListening -> "Listening..."
+                                        isSpeaking -> "Speaking..."
+                                        isStreaming || uiState is ChatUiState.Thinking -> "Thinking..."
+                                        else -> "Active"
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(6.dp)
                                             .clip(CircleShape)
-                                            .background(if (isStreaming || uiState is ChatUiState.Thinking) BuddyColors.Cyan else BuddyColors.ActiveGreen)
+                                            .background(statusDotColor)
                                     )
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        text = if (isStreaming || uiState is ChatUiState.Thinking) "Thinking..." else "Active",
+                                        text = statusText,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = BuddyColors.TextSecondary
                                     )
@@ -169,6 +192,11 @@ fun ChatScreen(
                         }
                     },
                     actions = {
+                        if (isSpeaking) {
+                            IconButton(onClick = { viewModel.ttsManager.stop() }) {
+                                Icon(Icons.Default.VolumeUp, contentDescription = "Stop TTS", tint = BuddyColors.Cyan)
+                            }
+                        }
                         IconButton(onClick = { showDeleteConfirm = true }) {
                             Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Chat", tint = BuddyColors.TextSecondary)
                         }
@@ -225,7 +253,11 @@ fun ChatScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 120.dp)
+                        BuddyOrb(
+                            buddyMode = BuddyMode.ACTIVE,
+                            size = 120.dp,
+                            orbState = if (isListening) OrbState.LISTENING else if (isSpeaking) OrbState.SPEAKING else OrbState.IDLE
+                        )
                         Spacer(Modifier.height(20.dp))
                         Text(
                             text = "Hey, I'm Buddy.",
@@ -234,14 +266,14 @@ fun ChatScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Your personal AI companion.",
+                            text = "Your voice-first personal AI companion.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = BuddyColors.TextSecondary
                         )
                         Spacer(Modifier.height(32.dp))
 
                         // Suggested Prompts
-                        val promptSuggestions = listOf("Plan my day", "Help me study", "Create a task", "Let's talk")
+                        val promptSuggestions = listOf("Remind me to study", "Remember I like Python", "Plan my day", "Let's talk")
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth(),
@@ -304,7 +336,7 @@ fun ChatScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
-                    if (capabilities.allowTextInteraction) {
+                    if (capabilities.allowTextInteraction || capabilities.allowVoiceInputOutput) {
                         GlassCard(
                             shape = BuddyShapes.ExtraLarge,
                             backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.95f),
@@ -323,19 +355,29 @@ fun ChatScreen(
                                         } else {
                                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                         }
-                                    }
+                                    },
+                                    enabled = capabilities.allowVoiceInputOutput
                                 ) {
                                     Icon(
-                                        imageVector = if (voiceState is VoiceState.Listening) Icons.Default.Stop else Icons.Default.Mic,
+                                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                                         contentDescription = "Voice Input",
-                                        tint = if (voiceState is VoiceState.Listening) BuddyColors.Rose else BuddyColors.Cyan
+                                        tint = when {
+                                            !capabilities.allowVoiceInputOutput -> BuddyColors.TextMuted
+                                            isListening -> BuddyColors.Rose
+                                            else -> BuddyColors.Cyan
+                                        }
                                     )
                                 }
 
                                 OutlinedTextField(
                                     value = inputText,
                                     onValueChange = viewModel::onInputChanged,
-                                    placeholder = { Text("Ask Buddy anything...", color = BuddyColors.TextMuted) },
+                                    placeholder = {
+                                        Text(
+                                            text = if (isListening) "Listening..." else "Ask Buddy anything...",
+                                            color = BuddyColors.TextMuted
+                                        )
+                                    },
                                     modifier = Modifier.weight(1f),
                                     singleLine = false,
                                     maxLines = 4,
@@ -377,7 +419,7 @@ fun ChatScreen(
 
                 // Voice Listening Waveform Modal Overlay
                 AnimatedVisibility(
-                    visible = voiceState is VoiceState.Listening,
+                    visible = isListening,
                     enter = slideInVertically { it } + fadeIn(),
                     exit = slideOutVertically { it } + fadeOut(),
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -395,7 +437,7 @@ fun ChatScreen(
                             BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 80.dp, orbState = OrbState.LISTENING)
                             Spacer(Modifier.height(16.dp))
                             Text(
-                                text = "Listening to you...",
+                                text = if (voiceInputState is VoiceInputState.PartialResult) (voiceInputState as VoiceInputState.PartialResult).text else "Listening to you...",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White
                             )
