@@ -20,6 +20,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE due_date IS NOT NULL AND due_date >= :fromTimestamp ORDER BY due_date ASC")
     suspend fun getUpcomingTasks(fromTimestamp: Long): List<TaskEntity>
 
+    @Query("SELECT * FROM tasks WHERE reminder_time IS NOT NULL AND is_completed = 0 ORDER BY reminder_time ASC")
+    suspend fun getPendingReminders(): List<TaskEntity>
+
     @Query("SELECT * FROM tasks WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): TaskEntity?
 
@@ -29,8 +32,11 @@ interface TaskDao {
     @Update
     suspend fun update(task: TaskEntity)
 
-    @Query("UPDATE tasks SET is_completed = :isCompleted WHERE id = :id")
+    @Query("UPDATE tasks SET is_completed = :isCompleted, status = CASE WHEN :isCompleted = 1 THEN 'COMPLETED' ELSE 'PENDING' END WHERE id = :id")
     suspend fun markCompleted(id: String, isCompleted: Boolean)
+
+    @Query("UPDATE tasks SET reminder_time = :newReminderTime, status = :newStatus WHERE id = :id")
+    suspend fun updateReminderTime(id: String, newReminderTime: Long, newStatus: String)
 
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun delete(id: String)

@@ -8,11 +8,11 @@ import com.buddy.aios.feature.home.presentation.HomeScreen
 fun NavGraphBuilder.homeNavGraph(navController: NavController) {
     composable(route = "home") {
         HomeScreen(
-            onOpenConversation = { conversationId ->
+            onNavigateToChat = { conversationId ->
                 navController.navigate("chat/$conversationId")
             },
-            onOpenSettings = { navController.navigate("settings") },
-            onOpenMemory  = { navController.navigate("memory") },
+            onNavigateToMemory = { navController.navigate("memory") },
+            onNavigateToSettings = { navController.navigate("settings") },
         )
     }
 }

@@ -1,10 +1,5 @@
 package com.buddy.aios.navigation
 
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -15,11 +10,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.buddy.aios.core.ui.animation.AIOSMotion
 import com.buddy.aios.core.ui.theme.BuddyColors
 import com.buddy.aios.feature.chat.navigation.chatNavGraph
 import com.buddy.aios.feature.home.navigation.homeNavGraph
 import com.buddy.aios.feature.memory.navigation.memoryNavGraph
-import com.buddy.aios.feature.onboarding.navigation.onboardingNavGraph
 import com.buddy.aios.feature.settings.navigation.settingsNavGraph
 
 @Composable
@@ -31,7 +26,7 @@ fun AppNavGraph(
 
     Scaffold(
         bottomBar = {
-            if (currentRoute != null && !currentRoute.startsWith(AppDestinations.ONBOARDING)) {
+            if (currentRoute != null) {
                 AIOSBottomBar(
                     currentRoute = currentRoute,
                     onNavigate = { route ->
@@ -48,16 +43,15 @@ fun AppNavGraph(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = AppDestinations.ONBOARDING,
-            enterTransition = { fadeIn(animationSpec = tween(250)) + slideInHorizontally(initialOffsetX = { 80 }) },
-            exitTransition = { fadeOut(animationSpec = tween(250)) + slideOutHorizontally(targetOffsetX = { -80 }) },
-            popEnterTransition = { fadeIn(animationSpec = tween(250)) + slideInHorizontally(initialOffsetX = { -80 }) },
-            popExitTransition = { fadeOut(animationSpec = tween(250)) + slideOutHorizontally(targetOffsetX = { 80 }) },
+            startDestination = AppDestinations.HOME, // DIRECT TO HOME — NO LANDING PAGE
+            enterTransition = { AIOSMotion.ScreenEnter },
+            exitTransition = { AIOSMotion.ScreenExit },
+            popEnterTransition = { AIOSMotion.PopScreenEnter },
+            popExitTransition = { AIOSMotion.PopScreenExit },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            onboardingNavGraph(navController)
             homeNavGraph(navController)
             chatNavGraph(navController)
             memoryNavGraph(navController)
@@ -67,7 +61,6 @@ fun AppNavGraph(
 }
 
 object AppDestinations {
-    const val ONBOARDING = "onboarding"
     const val HOME       = "home"
     const val CHAT       = "chat/{conversationId}"
     const val MEMORY     = "memory"

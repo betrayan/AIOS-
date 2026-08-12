@@ -2,6 +2,7 @@ package com.buddy.aios.feature.home.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.buddy.aios.core.ai.morning.MorningContextEngine
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.Task
 import com.buddy.aios.core.domain.entity.TaskPriority
@@ -32,6 +33,7 @@ class HomeViewModel @Inject constructor(
     private val taskRepository: ITaskRepository,
     private val memoryRepository: IMemoryRepository,
     private val userRepository: IUserRepository,
+    private val morningContextEngine: MorningContextEngine,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -45,13 +47,20 @@ class HomeViewModel @Inject constructor(
             memoryRepository.observeMemories(),
             userRepository.observeUserProfile(),
         ) { conversations, mode, tasks, memories, userProfile ->
+            val morningSummary = morningContextEngine.generateMorningSummary(
+                userProfile = userProfile,
+                activeTasks = tasks,
+                memories = memories,
+            )
+
             HomeUiState(
-                userGreeting = "Hey ${userProfile.preferredName}!",
+                userGreeting = morningSummary.greeting,
                 buddyMode = mode,
                 privacyLevel = userProfile.privacyLevel,
                 conversations = conversations,
                 activeTasks = tasks,
                 memoryCount = memories.size,
+                morningSummary = morningSummary,
                 isLoading = false,
                 errorMessage = null,
             )

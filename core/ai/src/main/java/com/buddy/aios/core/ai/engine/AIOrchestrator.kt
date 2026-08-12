@@ -144,13 +144,14 @@ class AIOrchestrator @Inject constructor(
                             val finalText = parseResult.cleanedText
 
                             val tool = parseResult.tool
+                            var executedToolResult: ToolResult? = null
                             if (tool != null) {
                                 AppLogger.d(TAG, "Executing tool: $tool")
-                                val toolResult = withContext(dispatchers.io) {
+                                executedToolResult = withContext(dispatchers.io) {
                                     toolExecutor.execute(tool)
                                 }
-                                if (toolResult is ToolResult.Failure) {
-                                    AppLogger.w(TAG, "Tool execution failed: ${toolResult.reason}")
+                                if (executedToolResult is ToolResult.Failure) {
+                                    AppLogger.w(TAG, "Tool execution failed: ${(executedToolResult as ToolResult.Failure).reason}")
                                 }
                             }
 
@@ -158,6 +159,8 @@ class AIOrchestrator @Inject constructor(
                                 text = finalText,
                                 isComplete = true,
                                 totalTokensUsed = chunk.totalTokensUsed,
+                                toolExecuted = tool,
+                                toolResult = executedToolResult,
                             )))
 
                             withContext(dispatchers.io) {

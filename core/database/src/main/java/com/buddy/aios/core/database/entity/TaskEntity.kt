@@ -11,6 +11,7 @@ import androidx.room.PrimaryKey
         Index(value = ["is_completed"]),
         Index(value = ["due_date"]),
         Index(value = ["reminder_time"]),
+        Index(value = ["status"]),
     ],
 )
 data class TaskEntity(
@@ -41,4 +42,19 @@ data class TaskEntity(
 
     @ColumnInfo(name = "tags_json")
     val tagsJson: String = "[]",
+
+    @ColumnInfo(name = "is_reminder")
+    val isReminder: Boolean = false,
+
+    @ColumnInfo(name = "notification_id")
+    val notificationId: Int = 0,
+
+    @ColumnInfo(name = "timezone")
+    val timezone: String = "UTC",
+
+    @ColumnInfo(name = "status")
+    val status: String = "PENDING",
+
+    @ColumnInfo(name = "recurrence_rule")
+    val recurrenceRule: String? = null,
 )

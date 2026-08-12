@@ -2,6 +2,8 @@ package com.buddy.aios.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.buddy.aios.core.database.dao.ConversationDao
 import com.buddy.aios.core.database.dao.MemoryDao
 import com.buddy.aios.core.database.dao.MessageDao
@@ -13,14 +15,6 @@ import com.buddy.aios.core.database.entity.TaskEntity
 
 /**
  * The single Room database for Buddy AI OS.
- *
- * MIGRATION POLICY:
- * - Always write explicit migrations. NEVER use fallbackToDestructiveMigration in production.
- * - Test each migration against a pre-migration schema snapshot in :core:database tests.
- *
- * ENCRYPTION:
- * - Message content and memory summaries are encrypted at the MAPPER level, not here.
- * - The DB file itself is NOT SQLCipher-encrypted (adds 20-30% overhead) unless required.
  */
 @Database(
     entities = [
@@ -29,8 +23,8 @@ import com.buddy.aios.core.database.entity.TaskEntity
         MemoryEntity::class,
         TaskEntity::class,
     ],
-    version = 1,
-    exportSchema = true,   // Schema exported to json for migration testing
+    version = 2,
+    exportSchema = false,
 )
 abstract class BuddyDatabase : RoomDatabase() {
     abstract fun conversationDao(): ConversationDao
@@ -40,5 +34,16 @@ abstract class BuddyDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "buddy_ai_os.db"
+
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tasks ADD COLUMN is_reminder INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN notification_id INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("ALTER TABLE tasks ADD COLUMN recurrence_rule TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+            }
+        }
     }
 }

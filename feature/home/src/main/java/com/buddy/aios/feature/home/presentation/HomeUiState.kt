@@ -1,5 +1,6 @@
 package com.buddy.aios.feature.home.presentation
 
+import com.buddy.aios.core.ai.morning.MorningSummary
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.Conversation
 import com.buddy.aios.core.domain.entity.PrivacyLevel
@@ -12,6 +13,7 @@ data class HomeUiState(
     val conversations: List<Conversation> = emptyList(),
     val activeTasks: List<Task> = emptyList(),
     val memoryCount: Int = 0,
+    val morningSummary: MorningSummary? = null,
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
 )

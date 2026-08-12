@@ -3,8 +3,12 @@ package com.buddy.aios.core.ai.tool
 import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.domain.entity.Memory
 import com.buddy.aios.core.domain.repository.IMemoryRepository
+import com.buddy.aios.core.domain.repository.IReminderScheduler
 import com.buddy.aios.core.domain.repository.ITaskRepository
 import com.buddy.aios.core.domain.result.Result
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -13,6 +17,7 @@ import javax.inject.Singleton
 class ToolExecutor @Inject constructor(
     private val taskRepository: ITaskRepository,
     private val memoryRepository: IMemoryRepository,
+    private val reminderScheduler: IReminderScheduler,
 ) {
     companion object {
         private const val TAG = "ToolExecutor"
@@ -31,10 +36,20 @@ class ToolExecutor @Inject constructor(
     private suspend fun createTask(tool: BuddyTool.CreateTask): ToolResult {
         if (tool.title.isBlank()) return ToolResult.ValidationError
         val task = tool.toDomainTask()
+
         return when (val result = taskRepository.saveTask(task)) {
             is Result.Success -> {
-                AppLogger.d(TAG, "Task created: '${tool.title}'")
-                ToolResult.Success("Task '${tool.title}' created successfully.")
+                AppLogger.d(TAG, "Task created: '${tool.title}' (dueTimestamp=${tool.dueTimestamp})")
+                val timeConfirmation = if (tool.dueTimestamp != null && tool.dueTimestamp > 0L) {
+                    val formatted = SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(tool.dueTimestamp))
+                    " at $formatted"
+                } else ""
+
+                val permissionNote = if (tool.dueTimestamp != null && !reminderScheduler.canScheduleExactAlarms()) {
+                    " (Note: Enable 'Alarms & reminders' in Settings for exact-time alerts)"
+                } else ""
+
+                ToolResult.Success("Done. I'll remind you to ${tool.title}$timeConfirmation.$permissionNote")
             }
             is Result.Error -> {
                 AppLogger.e(TAG, "Failed to create task: ${result.error}")
@@ -53,7 +68,7 @@ class ToolExecutor @Inject constructor(
         return when (val result = taskRepository.completeTask(task.id, true)) {
             is Result.Success -> {
                 AppLogger.d(TAG, "Task completed: '${task.title}'")
-                ToolResult.Success("Task '${task.title}' marked as completed.")
+                ToolResult.Success("Done. Marked '${task.title}' as completed.")
             }
             is Result.Error -> ToolResult.Failure("Could not complete the task.")
         }
@@ -67,7 +82,7 @@ class ToolExecutor @Inject constructor(
             ?: return ToolResult.Failure("No task found matching '${tool.title}'.")
 
         return when (val result = taskRepository.deleteTask(task.id)) {
-            is Result.Success -> ToolResult.Success("Task '${task.title}' removed.")
+            is Result.Success -> ToolResult.Success("Done. I've deleted your '${task.title}' reminder.")
             is Result.Error -> ToolResult.Failure("Could not delete the task.")
         }
     }

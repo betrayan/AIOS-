@@ -139,20 +139,48 @@ class ConversationRepositoryImpl @Inject constructor(
                     is Result.Success -> {
                         val chunk = chunkResult.value
                         accumulatedText.append(chunk.text)
+
+                        // Build metadata for the final complete chunk (not persisted)
+                        val toolMetadata: Map<String, String> = if (chunk.isComplete && chunk.toolExecuted != null) {
+                            buildMap {
+                                put("tool_type", chunk.toolExecuted!!.javaClass.simpleName)
+                                val isDueTimestamp = (chunk.toolExecuted as? com.buddy.aios.core.ai.tool.BuddyTool.CreateTask)?.dueTimestamp != null
+                                put("tool_label", when (chunk.toolExecuted) {
+                                    is com.buddy.aios.core.ai.tool.BuddyTool.CreateTask  -> if (isDueTimestamp) "Reminder set" else "Task created"
+                                    is com.buddy.aios.core.ai.tool.BuddyTool.CompleteTask -> "Task done"
+                                    is com.buddy.aios.core.ai.tool.BuddyTool.DeleteTask   -> "Task removed"
+                                    is com.buddy.aios.core.ai.tool.BuddyTool.SaveMemory   -> "Remembered"
+                                    is com.buddy.aios.core.ai.tool.BuddyTool.DeleteMemory -> "Memory cleared"
+                                    else -> "Action completed"
+                                })
+                                put("tool_result", when (chunk.toolResult) {
+                                    is com.buddy.aios.core.ai.tool.ToolResult.Success -> "success"
+                                    is com.buddy.aios.core.ai.tool.ToolResult.Failure -> "failure"
+                                    else -> "none"
+                                })
+                            }
+                        } else emptyMap()
+
                         val currentAssistantMessage = Message(
                             id = assistantMsgId,
                             conversationId = conversationId,
                             role = MessageRole.ASSISTANT,
                             content = accumulatedText.toString(),
                             timestamp = System.currentTimeMillis(),
+                            isComplete = chunk.isComplete,
+                            metadata = toolMetadata,
                         )
                         emit(Result.Success(currentAssistantMessage))
 
                         if (chunk.isComplete) {
-                            // Persist final complete assistant message
+                            // Persist final complete message — strip transient metadata
                             try {
+                                val persistable = currentAssistantMessage.copy(
+                                    isComplete = false,
+                                    metadata = emptyMap(),
+                                )
                                 withContext(dispatchers.io) {
-                                    messageDao.insert(currentAssistantMessage.toEntity(encryptionService))
+                                    messageDao.insert(persistable.toEntity(encryptionService))
                                     conversationDao.incrementMessageCount(conversationId, System.currentTimeMillis())
                                 }
                             } catch (e: Exception) {

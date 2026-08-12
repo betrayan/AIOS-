@@ -1,5 +1,6 @@
 package com.buddy.aios.feature.settings.presentation
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,15 +16,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Nightlight
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Smartphone
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,6 +34,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -43,8 +47,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -64,14 +68,18 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showEditNameDialog by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf("") }
     var showInterventionDemo by remember { mutableStateOf(false) }
 
+    var activityAwarenessEnabled by remember { mutableStateOf(true) }
+    var targetSleepHours by remember { mutableStateOf(8) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BuddyColors.BackgroundRadialGradient)
+            .background(BuddyColors.BackgroundDeep)
     ) {
         Scaffold(
             topBar = {
@@ -135,7 +143,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // 2. Buddy Operating Mode Selector Segmented Pill Cards
+                    // 2. Buddy Operating Mode Selector
                     item {
                         Text("BUDDY OPERATING MODE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
                         Spacer(Modifier.height(8.dp))
@@ -193,37 +201,43 @@ fun SettingsScreen(
                         }
                     }
 
-                    // 4. Voice & Audio Settings
+                    // 4. Activity Awareness & Sleep Target
                     item {
-                        Text("VOICE & AUDIO SETTINGS", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Text("ACTIVITY AWARENESS (LOCAL ONLY)", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
                         Spacer(Modifier.height(8.dp))
                         GlassCard(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null, tint = BuddyColors.Cyan)
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Icon(Icons.Default.Nightlight, contentDescription = null, tint = BuddyColors.PurpleLight)
                                         Spacer(Modifier.width(12.dp))
                                         Column {
-                                            Text("Voice Output", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                                            Text(if (state.buddyMode == BuddyMode.SILENT || state.buddyMode == BuddyMode.OFF) "Disabled in ${state.buddyMode} mode" else "Enabled (Text-to-Speech)", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                            Text("Activity Awareness", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            Text("Infers overnight inactivity window locally. Zero cloud data.", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
                                         }
                                     }
+                                    Switch(
+                                        checked = activityAwarenessEnabled,
+                                        onCheckedChange = { activityAwarenessEnabled = it },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                    )
                                 }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Mic, contentDescription = null, tint = BuddyColors.PurpleLight)
-                                        Spacer(Modifier.width(12.dp))
-                                        Column {
-                                            Text("Speech Recognition", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                                            Text("Android Native SpeechRecognizer", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+
+                                if (activityAwarenessEnabled) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Target Sleep Hours", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            TextButton(onClick = { if (targetSleepHours > 5) targetSleepHours-- }) { Text("-", color = BuddyColors.Cyan) }
+                                            Text("${targetSleepHours}h", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            TextButton(onClick = { if (targetSleepHours < 12) targetSleepHours++ }) { Text("+", color = BuddyColors.Cyan) }
                                         }
                                     }
                                 }
@@ -231,27 +245,40 @@ fun SettingsScreen(
                         }
                     }
 
-                    // 5. Analytics & Digital Wellbeing
+                    // 5. Notifications & Sound
                     item {
-                        Text("ANALYTICS & DIGITAL WELLBEING", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Text("NOTIFICATIONS & SOUND", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
                         Spacer(Modifier.height(8.dp))
                         GlassCard(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(16.dp)) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.Smartphone, contentDescription = null, tint = BuddyColors.Rose)
+                                        Icon(Icons.Default.Notifications, contentDescription = null, tint = BuddyColors.ActiveGreen)
                                         Spacer(Modifier.width(12.dp))
                                         Column {
-                                            Text("Screen Time Insight", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                                            Text("You spent 48 minutes on YouTube today.", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                            Text("AIOS Notifications", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                            Text("Morning summary and reminder notifications", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
                                         }
                                     }
-                                    TextButton(onClick = { showInterventionDemo = true }) {
-                                        Text("Preview", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                                    Text("AIOS Signature", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("Test Reminder Notification", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                    TextButton(onClick = {
+                                        viewModel.onScheduleTestReminder {
+                                            Toast.makeText(context, "Test reminder scheduled in 60s! Close app to test.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }) {
+                                        Text("Test (60s)", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -308,26 +335,6 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showEditNameDialog = false }) {
                     Text("Cancel", color = BuddyColors.TextMuted)
-                }
-            },
-            containerColor = BuddyColors.SurfaceDark
-        )
-    }
-
-    // Distraction Intervention Dialog Demo
-    if (showInterventionDemo) {
-        AlertDialog(
-            onDismissRequest = { showInterventionDemo = false },
-            title = { Text("Distraction Intervention", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = { Text("You've been on YouTube for 20 minutes. Do you really need more time?", color = BuddyColors.TextSecondary) },
-            confirmButton = {
-                TextButton(onClick = { showInterventionDemo = false }) {
-                    Text("I'm Done", color = BuddyColors.ActiveGreen, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showInterventionDemo = false }) {
-                    Text("Continue", color = BuddyColors.TextMuted)
                 }
             },
             containerColor = BuddyColors.SurfaceDark

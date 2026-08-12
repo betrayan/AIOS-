@@ -49,4 +49,8 @@ data class AIChunk(
     val text: String,
     val isComplete: Boolean,
     val totalTokensUsed: Int = 0,
+    /** Populated only on the final complete chunk — the tool that was executed, if any. */
+    val toolExecuted: com.buddy.aios.core.ai.tool.BuddyTool? = null,
+    /** Populated only on the final complete chunk — the result of tool execution, if any. */
+    val toolResult: com.buddy.aios.core.ai.tool.ToolResult? = null,
 )

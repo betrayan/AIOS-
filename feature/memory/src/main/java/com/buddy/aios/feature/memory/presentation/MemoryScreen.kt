@@ -46,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.buddy.aios.core.domain.entity.Memory
@@ -74,16 +73,17 @@ fun MemoryScreen(
     var memoryToEdit by remember { mutableStateOf<Memory?>(null) }
     var editedContent by remember { mutableStateOf("") }
 
-    val categories = listOf("All", "Preferences", "Goals", "People", "Routines", "Facts")
+    val categories = listOf("All", "Preferences", "Goals", "Projects", "Routines", "Important")
 
     val filteredMemories = remember(state.memories, searchQuery, selectedCategory) {
         state.memories.filter { memory ->
             val matchesSearch = searchQuery.isBlank() || memory.summary.contains(searchQuery, ignoreCase = true)
             val matchesCategory = selectedCategory == "All" || when (selectedCategory) {
-                "Preferences" -> memory.summary.contains("prefer", true) || memory.summary.contains("like", true)
-                "Goals" -> memory.summary.contains("goal", true) || memory.summary.contains("plan", true)
-                "People" -> memory.summary.contains("friend", true) || memory.summary.contains("work", true)
-                "Routines" -> memory.summary.contains("daily", true) || memory.summary.contains("usually", true)
+                "Preferences" -> memory.summary.contains("prefer", true) || memory.summary.contains("like", true) || memory.summary.contains("favourite", true)
+                "Goals"       -> memory.summary.contains("goal", true) || memory.summary.contains("plan", true) || memory.summary.contains("want to", true)
+                "Projects"    -> memory.summary.contains("project", true) || memory.summary.contains("code", true) || memory.summary.contains("build", true)
+                "Routines"    -> memory.summary.contains("daily", true) || memory.summary.contains("usually", true) || memory.summary.contains("always", true)
+                "Important"   -> memory.importance >= 0.7f
                 else -> true
             }
             matchesSearch && matchesCategory
@@ -93,15 +93,15 @@ fun MemoryScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BuddyColors.BackgroundRadialGradient)
+            .background(BuddyColors.BackgroundDeep)
     ) {
         Scaffold(
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
-                            Text("Your Memory Vault", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                            Text("Things AIOS remembers about you", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextSecondary)
+                            Text("AIOS remembers", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Text("Your personal long-term memory vault", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextSecondary)
                         }
                     },
                     navigationIcon = {
@@ -169,7 +169,7 @@ fun MemoryScreen(
                         value = searchQuery,
                         onValueChange = viewModel::onSearchQueryChanged,
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Search memories...", color = BuddyColors.TextMuted) },
+                        placeholder = { Text("Search memory vault...", color = BuddyColors.TextMuted) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BuddyColors.Cyan) },
                         shape = BuddyShapes.Pill,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -205,7 +205,9 @@ fun MemoryScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.Memory, contentDescription = null, tint = BuddyColors.TextMuted, modifier = Modifier.size(48.dp))
                                 Spacer(Modifier.height(12.dp))
-                                Text("No memories found", style = MaterialTheme.typography.titleMedium, color = BuddyColors.TextSecondary)
+                                Text("AIOS hasn't learned anything here yet.", style = MaterialTheme.typography.titleMedium, color = BuddyColors.TextSecondary)
+                                Spacer(Modifier.height(4.dp))
+                                Text("Tell AIOS something worth remembering.", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextMuted)
                             }
                         }
                     } else {

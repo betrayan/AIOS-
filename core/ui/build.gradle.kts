@@ -2,6 +2,7 @@ import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("buddy.android.library")
+    id("buddy.android.hilt")
     alias(libs.plugins.kotlin.compose)
 }
 

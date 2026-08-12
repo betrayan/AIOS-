@@ -8,18 +8,14 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,18 +65,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.buddy.aios.core.domain.agent.AgentStatus
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.Message
 import com.buddy.aios.core.domain.entity.MessageRole
+import com.buddy.aios.core.ui.animation.AIOSMotion
 import com.buddy.aios.core.ui.animation.clickableWithScale
-import com.buddy.aios.core.ui.components.AIOSButton
-import com.buddy.aios.core.ui.components.AIOSChip
 import com.buddy.aios.core.ui.components.BuddyOrb
 import com.buddy.aios.core.ui.components.GlassCard
 import com.buddy.aios.core.ui.components.OrbState
@@ -98,503 +93,354 @@ import java.util.Locale
 fun ChatScreen(
     conversationId: String,
     onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier,
     viewModel: ChatViewModel = hiltViewModel(),
 ) {
-    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
     val isStreaming by viewModel.isStreaming.collectAsStateWithLifecycle()
-    val capabilities by viewModel.currentCapabilities.collectAsStateWithLifecycle()
-    val voiceInputState by viewModel.voiceInputState.collectAsStateWithLifecycle()
+    val voiceState by viewModel.voiceInputState.collectAsStateWithLifecycle()
     val ttsState by viewModel.ttsState.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    val agentStatus by viewModel.agentStatus.collectAsStateWithLifecycle()
 
-    var showDeleteConfirm by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var showClearDialog by remember { mutableStateOf(false) }
 
-    val isListening = voiceInputState is VoiceInputState.Listening || voiceInputState is VoiceInputState.PartialResult
+    val isListening = voiceState is VoiceInputState.Listening || voiceState is VoiceInputState.PartialResult
     val isSpeaking = ttsState is TextToSpeechState.Speaking
 
-    // Audio record permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             viewModel.toggleVoiceInput()
         } else {
-            Toast.makeText(context, "Microphone permission required for voice input", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Microphone permission required for voice interaction", Toast.LENGTH_SHORT).show()
         }
     }
 
-    val messages = (uiState as? ChatUiState.Active)?.messages ?: emptyList()
+    val listState = rememberLazyListState()
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    // Auto-scroll on new message
+    val activeState = uiState as? ChatUiState.Active
+    val messageCount = activeState?.messages?.size ?: 0
+    LaunchedEffect(messageCount, activeState?.streamingPartialText) {
+        if (messageCount > 0) {
+            listState.animateScrollToItem(messageCount - 1)
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BuddyColors.BackgroundRadialGradient)
-    ) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            val orbStatus = when {
-                                isListening -> OrbState.LISTENING
-                                isSpeaking -> OrbState.SPEAKING
-                                isStreaming || uiState is ChatUiState.Thinking -> OrbState.THINKING
-                                else -> OrbState.IDLE
-                            }
-                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 32.dp, orbState = orbStatus)
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = (uiState as? ChatUiState.Active)?.conversationTitle ?: "AIOS Companion",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = Color.White
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    val statusDotColor = when {
-                                        isListening -> BuddyColors.Rose
-                                        isSpeaking -> BuddyColors.PurpleLight
-                                        isStreaming || uiState is ChatUiState.Thinking -> BuddyColors.Cyan
-                                        else -> BuddyColors.ActiveGreen
-                                    }
-                                    val statusText = when {
-                                        isListening -> "Listening..."
-                                        isSpeaking -> "Speaking..."
-                                        isStreaming || uiState is ChatUiState.Thinking -> "Thinking..."
-                                        else -> "Active"
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(statusDotColor)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        text = statusText,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = BuddyColors.TextSecondary
-                                    )
-                                }
-                            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val orbStatus = when {
+                            agentStatus == AgentStatus.FAILED -> OrbState.ERROR
+                            isListening -> OrbState.LISTENING
+                            isSpeaking -> OrbState.SPEAKING
+                            isStreaming || uiState is ChatUiState.Thinking || agentStatus != AgentStatus.IDLE -> OrbState.THINKING
+                            else -> OrbState.IDLE
                         }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-                    },
-                    actions = {
-                        if (isSpeaking) {
-                            IconButton(onClick = { viewModel.ttsManager.stop() }) {
-                                Icon(Icons.Default.VolumeUp, contentDescription = "Stop TTS", tint = BuddyColors.Cyan)
-                            }
-                        }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Chat", tint = BuddyColors.TextSecondary)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = BuddyColors.SurfaceDark.copy(alpha = 0.85f)),
-                )
-            },
-            containerColor = Color.Transparent,
-        ) { paddingValues ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                if (uiState is ChatUiState.Error) {
-                    val errState = uiState as ChatUiState.Error
-                    GlassCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp)
-                            .align(Alignment.Center),
-                        backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.95f),
-                        borderWidth = 1.5.dp
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
+                        BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 32.dp, orbState = orbStatus)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
                             Text(
-                                text = errState.message,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = BuddyColors.Rose
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = errState.secondaryMessage,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = BuddyColors.TextSecondary
-                            )
-                            Spacer(Modifier.height(20.dp))
-                            AIOSButton(
-                                text = "Retry",
-                                onClick = viewModel::onRetry,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                } else if (messages.isEmpty() && uiState !is ChatUiState.Thinking) {
-                    // Ambient Empty State
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        BuddyOrb(
-                            buddyMode = BuddyMode.ACTIVE,
-                            size = 120.dp,
-                            orbState = if (isListening) OrbState.LISTENING else if (isSpeaking) OrbState.SPEAKING else OrbState.IDLE
-                        )
-                        Spacer(Modifier.height(20.dp))
-                        Text(
-                            text = "Hey, I'm Buddy.",
-                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = Color.White
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Your voice-first personal AI companion.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = BuddyColors.TextSecondary
-                        )
-                        Spacer(Modifier.height(32.dp))
-
-                        // Suggested Prompts
-                        val promptSuggestions = listOf("Remind me to study", "Remember I like Python", "Plan my day", "Let's talk")
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            promptSuggestions.take(2).forEach { prompt ->
-                                AIOSChip(
-                                    text = prompt,
-                                    isSelected = false,
-                                    onClick = {
-                                        viewModel.onInputChanged(prompt)
-                                        viewModel.onSendMessage()
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            promptSuggestions.takeLast(2).forEach { prompt ->
-                                AIOSChip(
-                                    text = prompt,
-                                    isSelected = false,
-                                    onClick = {
-                                        viewModel.onInputChanged(prompt)
-                                        viewModel.onSendMessage()
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(top = 16.dp, bottom = 120.dp)
-                    ) {
-                        items(messages, key = { it.id }) { message ->
-                            ChatMessageBubble(message = message, context = context)
-                        }
-
-                        if (uiState is ChatUiState.Thinking || isStreaming) {
-                            item {
-                                ThinkingAnimationBubble()
-                            }
-                        }
-                    }
-                }
-
-                // Floating Input Area
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
-                ) {
-                    if (capabilities.allowTextInteraction || capabilities.allowVoiceInputOutput) {
-                        GlassCard(
-                            shape = BuddyShapes.ExtraLarge,
-                            backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.95f),
-                            borderWidth = 1.dp
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                            viewModel.toggleVoiceInput()
-                                        } else {
-                                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                        }
-                                    },
-                                    enabled = capabilities.allowVoiceInputOutput
-                                ) {
-                                    Icon(
-                                        imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                                        contentDescription = "Voice Input",
-                                        tint = when {
-                                            !capabilities.allowVoiceInputOutput -> BuddyColors.TextMuted
-                                            isListening -> BuddyColors.Rose
-                                            else -> BuddyColors.Cyan
-                                        }
-                                    )
-                                }
-
-                                OutlinedTextField(
-                                    value = inputText,
-                                    onValueChange = viewModel::onInputChanged,
-                                    placeholder = {
-                                        Text(
-                                            text = if (isListening) "Listening..." else "Ask Buddy anything...",
-                                            color = BuddyColors.TextMuted
-                                        )
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = false,
-                                    maxLines = 4,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color.Transparent,
-                                        unfocusedBorderColor = Color.Transparent,
-                                        focusedContainerColor = Color.Transparent,
-                                        unfocusedContainerColor = Color.Transparent,
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
-                                    )
-                                )
-
-                                IconButton(
-                                    onClick = { viewModel.onSendMessage() },
-                                    enabled = inputText.isNotBlank() && !isStreaming && uiState !is ChatUiState.Thinking,
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (inputText.isNotBlank() && !isStreaming && uiState !is ChatUiState.Thinking) BuddyColors.PurpleGlow
-                                            else BuddyColors.SurfaceElevated
-                                        )
-                                        .clickableWithScale(
-                                            enabled = inputText.isNotBlank() && !isStreaming && uiState !is ChatUiState.Thinking,
-                                            onClick = { viewModel.onSendMessage() }
-                                        )
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = "Send",
-                                        tint = if (inputText.isNotBlank() && !isStreaming) Color.White else BuddyColors.TextMuted,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Voice Listening Waveform Modal Overlay
-                AnimatedVisibility(
-                    visible = isListening,
-                    enter = slideInVertically { it } + fadeIn(),
-                    exit = slideOutVertically { it } + fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter)
-                ) {
-                    GlassCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        backgroundColor = BuddyColors.SurfaceElevated.copy(alpha = 0.98f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 80.dp, orbState = OrbState.LISTENING)
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                text = if (voiceInputState is VoiceInputState.PartialResult) (voiceInputState as VoiceInputState.PartialResult).text else "Listening to you...",
+                                text = "AIOS Companion",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = Color.White
                             )
-                            Spacer(Modifier.height(16.dp))
-                            VoiceWaveform(isActive = true)
-                            Spacer(Modifier.height(16.dp))
-                            TextButton(onClick = { viewModel.toggleVoiceInput() }) {
-                                Text("Stop Listening", color = BuddyColors.Rose, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                val statusDotColor = when {
+                                    agentStatus == AgentStatus.FAILED -> BuddyColors.Rose
+                                    isListening -> BuddyColors.Rose
+                                    isSpeaking -> BuddyColors.PurpleLight
+                                    isStreaming || agentStatus != AgentStatus.IDLE -> BuddyColors.Cyan
+                                    else -> BuddyColors.ActiveGreen
+                                }
+                                val statusText = when {
+                                    isListening -> "Listening..."
+                                    isSpeaking -> "Speaking..."
+                                    agentStatus == AgentStatus.UNDERSTANDING -> "Understanding..."
+                                    agentStatus == AgentStatus.PLANNING -> "Planning..."
+                                    agentStatus == AgentStatus.EXECUTING -> "Working..."
+                                    agentStatus == AgentStatus.VERIFYING -> "Checking..."
+                                    agentStatus == AgentStatus.WAITING_CONFIRMATION -> "Confirmation needed"
+                                    isStreaming -> "Thinking..."
+                                    else -> "Active"
+                                }
+                                Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(statusDotColor))
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = statusText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = BuddyColors.TextMuted
+                                )
                             }
                         }
                     }
-                }
-            }
-        }
-    }
-
-    if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Clear Conversation?", color = Color.White) },
-            text = { Text("This will remove all messages in this conversation from your device.", color = BuddyColors.TextSecondary) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.onClearConversation(onCleared = onNavigateBack)
-                        showDeleteConfirm = false
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
-                ) {
-                    Text("Clear", color = BuddyColors.Rose, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel", color = BuddyColors.TextMuted)
-                }
-            },
-            containerColor = BuddyColors.SurfaceDark
-        )
-    }
-}
-
-@Composable
-private fun ThinkingAnimationBubble() {
-    val transition = rememberInfiniteTransition(label = "thinkingAnim")
-    val dot1Alpha by transition.animateFloat(
-        initialValue = 0.2f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(600, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "d1"
-    )
-    val dot2Alpha by transition.animateFloat(
-        initialValue = 0.2f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(600, delayMillis = 200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "d2"
-    )
-    val dot3Alpha by transition.animateFloat(
-        initialValue = 0.2f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(600, delayMillis = 400, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "d3"
-    )
-
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-        BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 28.dp, orbState = OrbState.THINKING)
-        Spacer(Modifier.width(10.dp))
-        GlassCard(
-            shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
-            backgroundColor = BuddyColors.SurfaceElevated.copy(alpha = 0.75f)
+                },
+                actions = {
+                    IconButton(onClick = { showClearDialog = true }) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "Clear Chat", tint = BuddyColors.TextMuted)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BuddyColors.BackgroundDeep),
+            )
+        },
+        containerColor = BuddyColors.BackgroundDeep,
+        modifier = modifier,
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Buddy is thinking ", style = MaterialTheme.typography.bodyMedium, color = BuddyColors.TextSecondary)
-                Box(Modifier.size(6.dp).clip(CircleShape).background(BuddyColors.Cyan.copy(alpha = dot1Alpha)))
-                Spacer(Modifier.width(4.dp))
-                Box(Modifier.size(6.dp).clip(CircleShape).background(BuddyColors.Cyan.copy(alpha = dot2Alpha)))
-                Spacer(Modifier.width(4.dp))
-                Box(Modifier.size(6.dp).clip(CircleShape).background(BuddyColors.Cyan.copy(alpha = dot3Alpha)))
-            }
-        }
-    }
-}
+            // ── Messages List ──────────────────────────────────────────────────
+            Box(modifier = Modifier.weight(1f)) {
+                when (val state = uiState) {
+                    is ChatUiState.Loading -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 80.dp, orbState = OrbState.THINKING)
+                        }
+                    }
 
-@Composable
-private fun ChatMessageBubble(message: Message, context: Context) {
-    val isUser = message.role == MessageRole.USER
-    val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+                    is ChatUiState.Error -> {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            GlassCard(modifier = Modifier.fillMaxWidth(), backgroundColor = BuddyColors.SurfaceDark) {
+                                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(state.message, style = MaterialTheme.typography.titleMedium, color = BuddyColors.Rose)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(state.secondaryMessage, style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextMuted)
+                                    Spacer(Modifier.height(16.dp))
+                                    TextButton(onClick = { viewModel.onRetry() }) {
+                                        Text("Retry", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-    val timeStr = remember(message.timestamp) {
-        SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(message.timestamp))
-    }
-
-    val isCodeBlock = message.content.startsWith("```") && message.content.endsWith("```")
-    val cleanedCode = if (isCodeBlock) {
-        message.content.removeSurrounding("```").trim()
-    } else message.content
-
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = alignment
-    ) {
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-            modifier = Modifier.widthIn(max = 320.dp)
-        ) {
-            if (!isUser) {
-                BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 28.dp)
-                Spacer(Modifier.width(8.dp))
-            }
-
-            GlassCard(
-                shape = if (isUser) RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp) else RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp),
-                backgroundColor = if (isUser) BuddyColors.PurpleGlow.copy(alpha = 0.85f) else BuddyColors.SurfaceElevated.copy(alpha = 0.85f),
-                borderWidth = 1.dp
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    if (isCodeBlock) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                    is ChatUiState.Active -> {
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize(),
                         ) {
-                            Text("Code Snippet", style = MaterialTheme.typography.labelSmall, color = BuddyColors.Cyan)
-                            IconButton(
-                                onClick = {
+                            items(state.messages, key = { it.id }) { message ->
+                                ChatMessageBubble(message = message, onCopy = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("code", cleanedCode))
-                                    Toast.makeText(context, "Code copied to clipboard", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(20.dp)
-                            ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color.White.copy(alpha = 0.7f))
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("AIOS Message", message.content))
+                                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                                })
+                            }
+
+                            // Streaming Chunk Preview Bubble
+                            state.streamingPartialText?.let { streaming ->
+                                if (streaming.isNotBlank()) {
+                                    item {
+                                        ChatMessageBubble(
+                                            message = Message(
+                                                id = "streaming",
+                                                conversationId = conversationId,
+                                                role = MessageRole.ASSISTANT,
+                                                content = streaming,
+                                                timestamp = System.currentTimeMillis(),
+                                            ),
+                                            onCopy = {},
+                                        )
+                                    }
+                                }
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = cleanedCode,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = BuddyColors.TextPrimary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(BuddyShapes.Small)
-                                .background(Color.Black.copy(alpha = 0.4f))
-                                .padding(10.dp)
-                        )
-                    } else {
-                        Text(
-                            text = message.content,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White
+                    }
+
+                    ChatUiState.Thinking -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            BuddyOrb(buddyMode = BuddyMode.ACTIVE, size = 70.dp, orbState = OrbState.THINKING)
+                        }
+                    }
+                }
+            }
+
+            // ── Animated Voice Waveform Overlay (when listening/speaking) ──────
+            AnimatedVisibility(
+                visible = isListening || isSpeaking,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BuddyColors.SurfaceDark)
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VoiceWaveform(
+                        isActive = isListening || isSpeaking,
+                        activeColor = if (isListening) BuddyColors.Rose else BuddyColors.PurpleLight,
+                        barCount = 18,
+                    )
+                }
+            }
+
+            // ── Bottom Input Bar ───────────────────────────────────────────────
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = BuddyShapes.Pill,
+                backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.95f),
+                borderBrush = BuddyColors.GlassCardBorderGradient,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Voice Mic Toggle Button
+                    IconButton(onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            viewModel.toggleVoiceInput()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                            contentDescription = "Voice input",
+                            tint = if (isListening) BuddyColors.Rose else BuddyColors.Cyan,
                         )
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    // Text Field Input
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { viewModel.onInputChanged(it) },
+                        placeholder = { Text("Ask AIOS...", color = BuddyColors.TextMuted) },
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                        ),
+                        singleLine = true,
+                    )
+
+                    // Send Button
+                    IconButton(
+                        onClick = { viewModel.onSendMessage() },
+                        enabled = inputText.isNotBlank() && !isStreaming,
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = if (inputText.isNotBlank()) BuddyColors.Cyan else BuddyColors.TextMuted,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Clear Chat Confirmation Dialog
+        if (showClearDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearDialog = false },
+                title = { Text("Clear Conversation", color = Color.White) },
+                text = { Text("Are you sure you want to delete this conversation history?", color = BuddyColors.TextSecondary) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.onClearConversation { onNavigateBack() }
+                        showClearDialog = false
+                    }) {
+                        Text("Clear", color = BuddyColors.Rose, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDialog = false }) {
+                        Text("Cancel", color = BuddyColors.TextMuted)
+                    }
+                },
+                containerColor = BuddyColors.SurfaceDark,
+            )
+        }
+    }
+}
+
+// ── Message Bubble ────────────────────────────────────────────────────────────
+
+@Composable
+private fun ChatMessageBubble(
+    message: Message,
+    onCopy: () -> Unit,
+) {
+    val isUser = message.role == MessageRole.USER
+    val alignment = if (isUser) Alignment.End else Alignment.Start
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = alignment,
+    ) {
+        GlassCard(
+            modifier = Modifier.widthIn(max = 300.dp),
+            shape = RoundedCornerShape(
+                topStart = 18.dp,
+                topEnd = 18.dp,
+                bottomStart = if (isUser) 18.dp else 4.dp,
+                bottomEnd = if (isUser) 4.dp else 18.dp,
+            ),
+            backgroundColor = if (isUser) BuddyColors.PurpleGlow.copy(alpha = 0.30f) else BuddyColors.SurfaceDark.copy(alpha = 0.90f),
+            borderBrush = if (isUser) BuddyColors.GlassCardBorderGradient else BuddyColors.CardSurfaceGradient,
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = message.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                )
+
+                // Tool confirmation metadata indicator if present
+                message.metadata["tool_label"]?.let { label ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "✓ $label",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = BuddyColors.Cyan,
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val timeStr = SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(message.timestamp))
                     Text(
                         text = timeStr,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.align(Alignment.End)
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        color = BuddyColors.TextMuted,
                     )
+                    if (!isUser) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy message",
+                            tint = BuddyColors.TextMuted,
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clickable { onCopy() },
+                        )
+                    }
                 }
             }
         }

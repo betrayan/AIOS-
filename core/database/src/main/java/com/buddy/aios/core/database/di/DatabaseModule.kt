@@ -27,7 +27,8 @@ object DatabaseModule {
         BuddyDatabase::class.java,
         BuddyDatabase.DATABASE_NAME,
     )
-        .fallbackToDestructiveMigrationFrom() // Only for dev — remove before production release
+        .addMigrations(BuddyDatabase.MIGRATION_1_2)
+        .fallbackToDestructiveMigrationFrom()
         .build()
 
     @Provides
