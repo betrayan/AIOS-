@@ -557,9 +557,10 @@ private fun TopPrioritySection(
                             color = Color.White,
                         )
                         Spacer(Modifier.height(4.dp))
-                        val dueStr = topTask.reminderTime?.let {
-                            "Due today at " + SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(it))
-                        } ?: "Priority action"
+                        val taskTimestamp = topTask.reminderTime ?: topTask.dueDate
+                        val dueStr = if (taskTimestamp != null && taskTimestamp > 0L) {
+                            com.buddy.aios.core.common.time.ReminderDateFormatter.formatDueDateTime(taskTimestamp)
+                        } else "Priority action"
                         Text(
                             text = dueStr,
                             style = MaterialTheme.typography.bodySmall,

@@ -126,7 +126,7 @@ class MorningContextEngine @Inject constructor(
         val prioritySummary = if (priorityTasks.isNotEmpty()) {
             val topTask = priorityTasks.first()
             val timeStr = topTask.reminderTime?.let {
-                " at ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(it))}"
+                " (${com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(it)})"
             } ?: ""
             "You have ${priorityTasks.size} priority item${if (priorityTasks.size > 1) "s" else ""} today, starting with '${topTask.title}'$timeStr."
         } else "Your schedule is clear right now."

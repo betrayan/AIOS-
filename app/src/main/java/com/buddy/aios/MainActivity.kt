@@ -21,6 +21,11 @@ import com.buddy.aios.navigation.AppNavGraph
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+import android.view.KeyEvent
+import androidx.lifecycle.lifecycleScope
+import com.buddy.aios.core.domain.repository.IMorningWishEngine
+import kotlinx.coroutines.launch
+
 /**
  * Single-activity architecture entry point.
  *
@@ -29,14 +34,16 @@ import javax.inject.Inject
  * - Applies [BuddyTheme] as root composable wrapper
  * - Hosts the top-level [AppNavGraph]
  * - Overlays the [AIOSIsland] at the top of the screen (in-app, no window permission required)
- *
- * Nothing else belongs here. Business logic lives in ViewModels.
+ * - Intercepts volume buttons for Morning Wish interactive alarm acknowledgement
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var islandStateManager: AIOSIslandStateManager
+
+    @Inject
+    lateinit var morningWishEngine: IMorningWishEngine
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,5 +68,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (morningWishEngine.isWaitingForAcknowledgement()) {
+                lifecycleScope.launch {
+                    morningWishEngine.acknowledgeMorningWish("volume_button")
+                }
+                return true // Consumes the volume press so system volume does not change unexpectedly
+            }
+        }
+        return super.onKeyDown(keyCode, event)
     }
 }

@@ -58,6 +58,7 @@ import com.buddy.aios.core.domain.entity.PrivacyLevel
 import com.buddy.aios.core.ui.animation.clickableWithScale
 import com.buddy.aios.core.ui.components.AIOSLoadingIndicator
 import com.buddy.aios.core.ui.components.GlassCard
+import java.util.Locale
 import com.buddy.aios.core.ui.shapes.BuddyShapes
 import com.buddy.aios.core.ui.theme.BuddyColors
 

@@ -12,4 +12,7 @@ data class MorningBriefingSettings(
     val contextualTravelAlerts: Boolean = true,
     val importantReminderVoice: Boolean = true,
     val allowScreenOffVoice: Boolean = false,
+    val isMorningWishEnabled: Boolean = true,
+    val morningWishHour: Int = 6,
+    val morningWishMinute: Int = 0,
 )

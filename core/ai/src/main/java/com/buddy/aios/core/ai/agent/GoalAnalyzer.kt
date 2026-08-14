@@ -234,7 +234,6 @@ class GoalAnalyzer @Inject constructor() {
     private fun extractTaskDetails(raw: String): ExtractedTaskDetails {
         var text = raw.replace(Regex("(?i)^(remind me to|remind me|set a reminder to|set a reminder for|create task|add task|set a reminder)\\s+"), "").trim()
         val now = System.currentTimeMillis()
-        var dueTimestamp: Long? = null
         var recurrenceRule: String? = null
 
         // 1. Recurrence check (e.g. "every day at 7 PM", "daily")
@@ -246,54 +245,9 @@ class GoalAnalyzer @Inject constructor() {
             text = text.replace(Regex("(?i)\\s*(every week|weekly)"), "").trim()
         }
 
-        // 2. Relative time check: "in X minute(s)" / "in X min(s)" / "in X hour(s)"
-        val minuteMatch = Regex("(?i)in\\s+(\\d+)\\s*(minute|minutes|min|mins)").find(text)
-        if (minuteMatch != null) {
-            val mins = minuteMatch.groupValues[1].toLongOrNull() ?: 1L
-            dueTimestamp = now + (mins * 60 * 1000L)
-            text = text.replace(minuteMatch.value, "").trim()
-        }
-
-        val hourMatch = Regex("(?i)in\\s+(\\d+)\\s*(hour|hours|hr|hrs)").find(text)
-        if (dueTimestamp == null && hourMatch != null) {
-            val hrs = hourMatch.groupValues[1].toLongOrNull() ?: 1L
-            dueTimestamp = now + (hrs * 3600 * 1000L)
-            text = text.replace(hourMatch.value, "").trim()
-        }
-
-        // 3. Absolute time check: "at X PM" / "at X AM" / "tomorrow at X"
-        if (dueTimestamp == null) {
-            val timeMatch = Regex("(?i)(tomorrow\\s+at|at)\\s+(\\d{1,2})\\s*(:\ud83d\udd50\\d{2})?\\s*(pm|am)?").find(text)
-            val simpleTimeMatch = Regex("(?i)(tomorrow\\s+at|at)\\s+(\\d{1,2})\\s*(pm|am)").find(text)
-            val matched = simpleTimeMatch ?: timeMatch
-
-            if (matched != null) {
-                val isTomorrow = matched.value.lowercase().contains("tomorrow")
-                val hourNum = matched.groupValues[2].toIntOrNull() ?: 9
-                val amPm = matched.groupValues.lastOrNull()?.lowercase() ?: "pm"
-
-                val cal = Calendar.getInstance().apply {
-                    timeInMillis = now
-                    if (isTomorrow) add(Calendar.DAY_OF_YEAR, 1)
-
-                    var targetHour = hourNum
-                    if (amPm == "pm" && targetHour < 12) targetHour += 12
-                    if (amPm == "am" && targetHour == 12) targetHour = 0
-
-                    set(Calendar.HOUR_OF_DAY, targetHour)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
-
-                    // If target time today has already passed, bump to tomorrow
-                    if (!isTomorrow && timeInMillis <= now) {
-                        add(Calendar.DAY_OF_YEAR, 1)
-                    }
-                }
-                dueTimestamp = cal.timeInMillis
-                text = text.replace(matched.value, "").trim()
-            }
-        }
+        // 2. Deterministic Natural Language Time Parsing
+        val (dueTimestamp, cleanedText) = com.buddy.aios.core.common.time.NaturalLanguageTimeParser.parse(text, now)
+        text = cleanedText.ifBlank { text }
 
         // Clean trailing prepositions ("to", "at", "for")
         text = text.replace(Regex("(?i)^(to|for|at)\\s+"), "")

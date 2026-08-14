@@ -33,6 +33,9 @@ class MorningBriefingSettingsRepositoryImpl @Inject constructor(
             contextualTravelAlerts = prefs.getBoolean("contextual_travel_alerts", true),
             importantReminderVoice = prefs.getBoolean("important_reminder_voice", true),
             allowScreenOffVoice = prefs.getBoolean("allow_screen_off_voice", false),
+            isMorningWishEnabled = prefs.getBoolean("is_morning_wish_enabled", true),
+            morningWishHour = prefs.getInt("morning_wish_hour", 6),
+            morningWishMinute = prefs.getInt("morning_wish_minute", 0),
         )
     }
 
@@ -52,6 +55,9 @@ class MorningBriefingSettingsRepositoryImpl @Inject constructor(
             .putBoolean("contextual_travel_alerts", settings.contextualTravelAlerts)
             .putBoolean("important_reminder_voice", settings.importantReminderVoice)
             .putBoolean("allow_screen_off_voice", settings.allowScreenOffVoice)
+            .putBoolean("is_morning_wish_enabled", settings.isMorningWishEnabled)
+            .putInt("morning_wish_hour", settings.morningWishHour)
+            .putInt("morning_wish_minute", settings.morningWishMinute)
             .apply()
         _settingsState.value = settings
     }

@@ -26,17 +26,21 @@ class BootReceiver : BroadcastReceiver() {
     @Inject
     lateinit var reminderEngine: IReminderEngine
 
+    @Inject
+    lateinit var morningWishEngine: com.buddy.aios.core.domain.repository.IMorningWishEngine
+
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
         if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
 
-        AppLogger.d(TAG, "Device boot / package update completed — restoring pending reminder alarms")
+        AppLogger.d(TAG, "Device boot / package update completed — restoring pending reminder & morning wish alarms")
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val restoredCount = reminderEngine.restoreReminders()
-                AppLogger.d(TAG, "Restored and rescheduled $restoredCount pending reminder(s) after reboot/update")
+                morningWishEngine.scheduleMorningWish()
+                AppLogger.d(TAG, "Restored $restoredCount reminder(s) and scheduled Morning Wish after reboot/update")
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Failed to reschedule reminders after boot", e)
             } finally {

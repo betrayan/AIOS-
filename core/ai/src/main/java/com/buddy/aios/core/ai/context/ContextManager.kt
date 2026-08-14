@@ -164,8 +164,8 @@ class ContextManager @Inject constructor() {
         if (activeTasks.isNotEmpty()) {
             appendLine("User's current tasks:")
             activeTasks.take(5).forEach { task ->
-                val dueStr = task.dueDate?.let {
-                    " (due ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(it))})"
+                val dueStr = (task.reminderTime ?: task.dueDate)?.let {
+                    " (${com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(it)})"
                 } ?: ""
                 appendLine("- ${task.title}$dueStr")
             }

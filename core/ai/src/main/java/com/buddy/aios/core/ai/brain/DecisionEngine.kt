@@ -78,9 +78,10 @@ class DecisionEngine @Inject constructor(
         val task = topRanked?.task ?: snapshot.activeTasks.first()
 
         val nextReminder = snapshot.upcomingReminders.firstOrNull()
-        val responseText = if (nextReminder != null && nextReminder.id != task.id) {
-            val reminderTimeStr = formatTime(nextReminder.reminderTime ?: System.currentTimeMillis())
-            "Your highest priority right now is '${task.title}'. You also have an upcoming reminder for '${nextReminder.title}' at $reminderTimeStr."
+        val nextReminderTime = nextReminder?.reminderTime ?: nextReminder?.dueDate
+        val responseText = if (nextReminder != null && nextReminder.id != task.id && nextReminderTime != null && nextReminderTime > 0L) {
+            val reminderTimeStr = com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(nextReminderTime)
+            "Your highest priority right now is '${task.title}'. You also have an upcoming reminder for '${nextReminder.title}' $reminderTimeStr."
         } else {
             "Your highest priority right now is to focus on '${task.title}' (${topRanked?.urgencyReason ?: "active task"})."
         }
@@ -126,8 +127,8 @@ class DecisionEngine @Inject constructor(
             .sortedBy { it.reminderTime ?: it.dueDate ?: Long.MAX_VALUE }
 
         val scheduleLines = sortedItems.joinToString("\n") { task ->
-            val rTime = task.reminderTime
-            val timeStr = if (rTime != null && rTime > 0) formatTime(rTime) else "Flexible"
+            val rTime = task.reminderTime ?: task.dueDate
+            val timeStr = if (rTime != null && rTime > 0) com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(rTime) else "Flexible"
             "• $timeStr: ${task.title}"
         }
 

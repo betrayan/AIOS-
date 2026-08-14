@@ -8,6 +8,9 @@ sealed interface VoiceCommand {
     data object StopListening : VoiceCommand
     data class SetVoiceMode(val enabled: Boolean) : VoiceCommand
     data class SetBuddyModeCommand(val mode: BuddyMode) : VoiceCommand
+    data object MorningWishCommand : VoiceCommand
+    data object AcknowledgeMorningWishCommand : VoiceCommand
+
     sealed interface RecordingCommand : VoiceCommand {
         data object Start : RecordingCommand
         data object Stop : RecordingCommand
@@ -91,6 +94,18 @@ class VoiceCommandParser @Inject constructor() {
 
             lower.contains("explain in detail") || lower.contains("explain it in detail") || lower.contains("detailed explanation") ->
                 VoiceCommand.SummaryCommand.DetailedExplanation
+
+            // 6. Morning Wish Commands
+            lower.contains("morning wish") || lower.contains("aios, morning wish") ||
+            lower.contains("give me my morning wish") || lower.contains("good morning aios") ||
+            lower.contains("start morning briefing") ->
+                VoiceCommand.MorningWishCommand
+
+            // 7. Natural Morning Wish Acknowledgements
+            lower == "good morning" || lower == "morning" || lower == "thank you" ||
+            lower == "okay" || lower == "i'm awake" || lower == "yes" ||
+            lower == "got it" || lower == "stop" || lower == "that's enough" ->
+                VoiceCommand.AcknowledgeMorningWishCommand
 
             else -> null
         }

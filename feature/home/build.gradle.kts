@@ -10,6 +10,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:analytics"))
     implementation(project(":core:ai"))
+    implementation(project(":core:common"))
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)

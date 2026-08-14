@@ -41,8 +41,8 @@ class ToolExecutor @Inject constructor(
             is Result.Success -> {
                 AppLogger.d(TAG, "Task created: '${tool.title}' (dueTimestamp=${tool.dueTimestamp})")
                 val timeConfirmation = if (tool.dueTimestamp != null && tool.dueTimestamp > 0L) {
-                    val formatted = SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(tool.dueTimestamp))
-                    " at $formatted"
+                    val formatted = com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(tool.dueTimestamp)
+                    " $formatted"
                 } else ""
 
                 val permissionNote = if (tool.dueTimestamp != null && !reminderScheduler.canScheduleExactAlarms()) {

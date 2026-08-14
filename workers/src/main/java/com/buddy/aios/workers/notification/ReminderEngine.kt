@@ -106,7 +106,7 @@ class ReminderEngine @Inject constructor(
             return ReminderEngineResult.Failure("Could not verify task persistence in database.")
         }
 
-        val timeFormatted = formatLocalTime(computedTrigger, deviceTimezone)
+        val timeFormatted = com.buddy.aios.core.common.time.ReminderDateFormatter.formatNaturalDateTime(computedTrigger)
         val confirmationMsg = "Done. I'll remind you $timeFormatted to ${task.title}."
 
         AppLogger.d(TAG, "Successfully created and verified reminder id=$taskId for $timeFormatted")

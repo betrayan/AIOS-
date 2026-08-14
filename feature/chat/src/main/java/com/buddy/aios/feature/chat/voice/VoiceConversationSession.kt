@@ -36,6 +36,7 @@ class VoiceConversationSession @Inject constructor(
     private val ttsManager: TextToSpeechManager,
     private val voiceCommandParser: VoiceCommandParser,
     private val buddyModeRepository: IBuddyModeRepository,
+    private val morningWishEngine: com.buddy.aios.core.domain.repository.IMorningWishEngine,
 ) {
     companion object {
         private const val TAG = "VoiceConversationSession"
@@ -169,6 +170,18 @@ class VoiceConversationSession @Inject constructor(
                 scope.launch {
                     buddyModeRepository.setBuddyMode(command.mode)
                     speak("${command.mode.name.lowercase().replaceFirstChar { it.uppercase() }} mode is on.")
+                }
+            }
+            is VoiceCommand.MorningWishCommand -> {
+                scope.launch {
+                    morningWishEngine.triggerMorningWish(isManualTrigger = true)
+                }
+            }
+            is VoiceCommand.AcknowledgeMorningWishCommand -> {
+                scope.launch {
+                    if (morningWishEngine.isWaitingForAcknowledgement()) {
+                        morningWishEngine.acknowledgeMorningWish(source = "voice")
+                    }
                 }
             }
             else -> {}

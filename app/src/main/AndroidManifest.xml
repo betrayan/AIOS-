@@ -67,6 +67,17 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name="com.buddy.aios.workers.morning.MorningWishReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.buddy.aios.ACTION_MORNING_WISH_TRIGGER" />
+                <action android:name="com.buddy.aios.ACTION_MORNING_WISH_REPEAT" />
+                <action android:name="com.buddy.aios.ACTION_MORNING_WISH_ACKNOWLEDGE" />
+                <action android:name="com.buddy.aios.ACTION_MORNING_WISH_SILENCE" />
+            </intent-filter>
+        </receiver>
+
         <!-- WorkManager initialization provider disabled — manual configuration -->
         <provider
             android:name="androidx.startup.InitializationProvider"
