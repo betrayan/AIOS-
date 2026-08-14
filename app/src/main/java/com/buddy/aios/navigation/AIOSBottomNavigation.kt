@@ -47,7 +47,6 @@ import com.buddy.aios.core.ui.theme.BuddyColors
 sealed class BottomNavItem(val route: String, val title: String, val icon: ImageVector) {
     data object Home     : BottomNavItem(AppDestinations.HOME, "Home", Icons.Default.Home)
     data object Chat     : BottomNavItem("chat/default", "Chat", Icons.Default.ChatBubbleOutline)
-    data object Memory   : BottomNavItem(AppDestinations.MEMORY, "Memory", Icons.Default.Memory)
     data object Settings : BottomNavItem(AppDestinations.SETTINGS, "Settings", Icons.Default.Settings)
 }
 
@@ -69,7 +68,6 @@ fun AIOSBottomBar(
     val items = listOf(
         BottomNavItem.Home,
         BottomNavItem.Chat,
-        BottomNavItem.Memory,
         BottomNavItem.Settings,
     )
 

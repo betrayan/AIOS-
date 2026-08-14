@@ -7,7 +7,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.data.mapper.toDomain
 import com.buddy.aios.core.database.dao.TaskDao
-import com.buddy.aios.core.domain.repository.IReminderScheduler
+import com.buddy.aios.core.domain.repository.IReminderEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,10 +30,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
     }
 
     @Inject
-    lateinit var taskDao: TaskDao
-
-    @Inject
-    lateinit var scheduler: IReminderScheduler
+    lateinit var reminderEngine: IReminderEngine
 
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getStringExtra(ReminderReceiver.EXTRA_TASK_ID) ?: return
@@ -48,24 +45,13 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 when (intent.action) {
                     ACTION_COMPLETE_TASK -> {
                         AppLogger.d(TAG, "Executing DONE action for task id=$taskId")
-                        taskDao.markCompleted(taskId, true)
-                        scheduler.cancel(taskId, notificationId)
-                        AppLogger.d(TAG, "Completed task id=$taskId and cancelled future alarms")
+                        reminderEngine.completeReminder(taskId)
                     }
 
                     ACTION_SNOOZE_TASK -> {
                         val snoozeMins = intent.getIntExtra(EXTRA_SNOOZE_MINUTES, 10)
-                        val newTime = System.currentTimeMillis() + (snoozeMins * 60 * 1000L)
                         AppLogger.d(TAG, "Executing SNOOZE action ($snoozeMins mins) for task id=$taskId")
-
-                        taskDao.updateReminderTime(taskId, newTime, "SNOOZED")
-
-                        val updatedEntity = taskDao.getById(taskId)
-                        if (updatedEntity != null) {
-                            val domainTask = updatedEntity.toDomain()
-                            val scheduled = scheduler.schedule(domainTask)
-                            AppLogger.d(TAG, "Snoozed task id=$taskId for $snoozeMins mins. Rescheduled=$scheduled")
-                        }
+                        reminderEngine.snoozeReminder(taskId, snoozeMins)
                     }
                 }
             } catch (e: Exception) {

@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":feature:memory"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:onboarding"))
+    implementation(project(":feature:voice"))
 
     // Workers
     implementation(project(":workers"))

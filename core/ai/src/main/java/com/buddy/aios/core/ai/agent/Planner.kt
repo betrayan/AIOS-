@@ -118,6 +118,20 @@ class Planner @Inject constructor() {
                     status = AgentPlanStatus.READY,
                 )
             }
+
+            is GoalAnalysis.FollowUp -> {
+                AgentPlan(
+                    goalId = goal.id,
+                    steps = listOf(
+                        AgentStep(
+                            description = "Adapt response based on follow-up request: '${goal.originalRequest}'",
+                            type = AgentStepType.INFORMATIONAL,
+                            status = AgentStepStatus.PENDING,
+                        )
+                    ),
+                    status = AgentPlanStatus.READY,
+                )
+            }
         }
     }
 

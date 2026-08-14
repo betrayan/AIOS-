@@ -7,6 +7,7 @@ import com.buddy.aios.core.database.dao.ConversationDao
 import com.buddy.aios.core.database.dao.MemoryDao
 import com.buddy.aios.core.database.dao.MessageDao
 import com.buddy.aios.core.database.dao.TaskDao
+import com.buddy.aios.core.database.dao.VoiceRecordingDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,7 +28,11 @@ object DatabaseModule {
         BuddyDatabase::class.java,
         BuddyDatabase.DATABASE_NAME,
     )
-        .addMigrations(BuddyDatabase.MIGRATION_1_2)
+        .addMigrations(
+            BuddyDatabase.MIGRATION_1_2,
+            BuddyDatabase.MIGRATION_2_3,
+            BuddyDatabase.MIGRATION_3_4,
+        )
         .fallbackToDestructiveMigrationFrom()
         .build()
 
@@ -42,4 +47,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTaskDao(db: BuddyDatabase): TaskDao = db.taskDao()
+
+    @Provides
+    fun provideVoiceRecordingDao(db: BuddyDatabase): VoiceRecordingDao = db.voiceRecordingDao()
 }

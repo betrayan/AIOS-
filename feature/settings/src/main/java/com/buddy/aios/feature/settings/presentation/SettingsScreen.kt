@@ -65,6 +65,7 @@ import com.buddy.aios.core.ui.theme.BuddyColors
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToMemory: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -139,6 +140,37 @@ fun SettingsScreen(
                                 ) {
                                     Text("Edit Name", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                    }
+
+                    // 1.5 AIOS Memories Section (Relocated from Home)
+                    item {
+                        Text("MEMORY & VAULT", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        GlassCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickableWithScale(onClick = onNavigateToMemory),
+                            backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.85f),
+                            borderBrush = BuddyColors.GlassCardBorderGradient,
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("🧠", style = MaterialTheme.typography.titleLarge)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text("AIOS Memories", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                        Text("Manage what AIOS remembers about you", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                    }
+                                }
+                                Text("›", style = MaterialTheme.typography.titleLarge, color = BuddyColors.Cyan)
                             }
                         }
                     }
@@ -285,6 +317,99 @@ fun SettingsScreen(
                         }
                     }
 
+                    // 6. Morning Intelligence & Context
+                    item {
+                        Text("MORNING INTELLIGENCE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                        Spacer(Modifier.height(8.dp))
+                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                val m = state.morningSettings
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text("Morning Briefing", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                        Text("Contextual briefing at start of day", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                    }
+                                    Switch(
+                                        checked = m.isBriefingEnabled,
+                                        onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(isBriefingEnabled = it)) },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                    )
+                                }
+
+                                if (m.isBriefingEnabled) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Voice Summary", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Switch(
+                                            checked = m.isVoiceEnabled,
+                                            onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(isVoiceEnabled = it)) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Weather Relevance", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Switch(
+                                            checked = m.includeWeather,
+                                            onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(includeWeather = it)) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Sleep Summary", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Switch(
+                                            checked = m.includeSleep,
+                                            onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(includeSleep = it)) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Contextual Battery Alerts", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Switch(
+                                            checked = m.contextualBatteryAlerts,
+                                            onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(contextualBatteryAlerts = it)) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Travel Context Alerts", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                        Switch(
+                                            checked = m.contextualTravelAlerts,
+                                            onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(contextualTravelAlerts = it)) },
+                                            colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // 6. System Info
                     item {
                         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -293,7 +418,7 @@ fun SettingsScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text("AIOS Companion Edition", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                                    Text("Version 1.0.0 • Clean Architecture", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextMuted)
+                                    Text("Version 8.0.0 (Stage 8 Brain) • Clean Architecture", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextMuted)
                                 }
                             }
                         }

@@ -54,6 +54,21 @@ class GoalAnalyzer @Inject constructor() {
             )
         }
 
+        // 2.5 Follow-up Requests (e.g. "Make it shorter", "Why is it useful?")
+        if (isFollowUp(lower)) {
+            val modificationType = when {
+                lower.contains("shorter") || lower.contains("brief") || lower.contains("compact") -> "SHORTEN"
+                lower.contains("longer") || lower.contains("detail") -> "EXPAND"
+                lower.contains("why") || lower.contains("how") -> "EXPLAIN_REASONING"
+                else -> "MODIFY"
+            }
+            return GoalAnalysis.FollowUp(
+                originalRequest = raw,
+                targetReference = "previous_context",
+                modificationType = modificationType,
+            )
+        }
+
         // 3. Single-Step Task/Reminder Creation
         if (isTaskCreation(lower)) {
             val (title, dueTimestamp, recurrenceRule) = extractTaskDetails(raw)
@@ -166,6 +181,18 @@ class GoalAnalyzer @Inject constructor() {
     private fun isAmbiguous(lower: String): Boolean {
         val trimmed = lower.trim()
         return (trimmed == "delete it" || trimmed == "remove it" || trimmed == "do it" || trimmed == "complete it" || trimmed == "change it")
+    }
+
+    private fun isFollowUp(lower: String): Boolean {
+        return lower.startsWith("make it ") ||
+                lower.startsWith("make that ") ||
+                lower.startsWith("make the ") ||
+                lower.startsWith("shorten ") ||
+                lower.contains("make that plan") ||
+                lower.contains("why is it") ||
+                lower.contains("how is it") ||
+                lower.contains("what about tomorrow") ||
+                lower.contains("tell me more about it")
     }
 
     private fun isTaskCreation(lower: String): Boolean {

@@ -32,11 +32,20 @@ interface TaskDao {
     @Update
     suspend fun update(task: TaskEntity)
 
-    @Query("UPDATE tasks SET is_completed = :isCompleted, status = CASE WHEN :isCompleted = 1 THEN 'COMPLETED' ELSE 'PENDING' END WHERE id = :id")
+    @Query("UPDATE tasks SET is_completed = :isCompleted, status = CASE WHEN :isCompleted = 1 THEN 'COMPLETED' ELSE 'PENDING' END, delivery_state = CASE WHEN :isCompleted = 1 THEN 'COMPLETED' ELSE 'SCHEDULED' END WHERE id = :id")
     suspend fun markCompleted(id: String, isCompleted: Boolean)
+
+    @Query("UPDATE tasks SET reminder_time = :newReminderTime, status = :newStatus, delivery_state = :deliveryState WHERE id = :id")
+    suspend fun updateReminderSchedule(id: String, newReminderTime: Long, newStatus: String, deliveryState: String)
 
     @Query("UPDATE tasks SET reminder_time = :newReminderTime, status = :newStatus WHERE id = :id")
     suspend fun updateReminderTime(id: String, newReminderTime: Long, newStatus: String)
+
+    @Query("UPDATE tasks SET delivery_state = :deliveryState WHERE id = :id")
+    suspend fun updateDeliveryState(id: String, deliveryState: String)
+
+    @Query("SELECT * FROM tasks WHERE reminder_time IS NOT NULL AND reminder_time < :now AND is_completed = 0 AND delivery_state = 'SCHEDULED'")
+    suspend fun getMissedReminders(now: Long): List<TaskEntity>
 
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun delete(id: String)

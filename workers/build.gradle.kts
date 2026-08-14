@@ -13,6 +13,7 @@ dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:common"))
     implementation(project(":core:database"))
+    implementation(project(":core:analytics"))
 
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)

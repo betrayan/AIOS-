@@ -7,6 +7,7 @@ import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.canVoiceOutput
 import com.buddy.aios.core.domain.repository.IBuddyModeRepository
+import com.buddy.aios.core.common.voice.IVoiceOutputManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,12 +29,14 @@ sealed interface TextToSpeechState {
 
 /**
  * Production-ready Android [TextToSpeech] engine wrapper with state management & BuddyMode compliance.
+ * Implements [IVoiceOutputManager] so lower-level modules (workers) can trigger speech via the
+ * abstraction without depending on feature:chat.
  */
 @Singleton
 class TextToSpeechManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val buddyModeRepository: IBuddyModeRepository,
-) : TextToSpeech.OnInitListener {
+) : TextToSpeech.OnInitListener, IVoiceOutputManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var tts: TextToSpeech? = null
@@ -92,7 +95,7 @@ class TextToSpeechManager @Inject constructor(
         }
     }
 
-    fun speak(text: String) {
+    override fun speak(text: String) {
         if (!currentBuddyMode.canVoiceOutput) {
             AppLogger.w(TAG, "Speech output blocked: BuddyMode is $currentBuddyMode")
             _state.value = TextToSpeechState.Disabled
@@ -122,7 +125,7 @@ class TextToSpeechManager @Inject constructor(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         try {
             if (tts?.isSpeaking == true) {
                 tts?.stop()

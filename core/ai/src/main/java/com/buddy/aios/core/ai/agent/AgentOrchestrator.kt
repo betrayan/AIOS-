@@ -365,7 +365,8 @@ class AgentOrchestrator @Inject constructor(
         is GoalAnalysis.MultiStepGoal -> GoalType.GOAL
         is GoalAnalysis.DiagnosticProblem -> GoalType.PROBLEM
         is GoalAnalysis.Conversational -> GoalType.CONVERSATION
-        is GoalAnalysis.AmbiguousRequest -> GoalType.AMBIGUOUS_REQUEST
+        is GoalAnalysis.FollowUp -> GoalType.FOLLOW_UP
+        is GoalAnalysis.AmbiguousRequest -> GoalType.CLARIFICATION_REQUIRED
         is GoalAnalysis.HighRiskConfirmation -> GoalType.COMMAND
     }
 }

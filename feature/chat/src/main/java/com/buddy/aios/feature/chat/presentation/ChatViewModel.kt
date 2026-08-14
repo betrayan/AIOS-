@@ -105,6 +105,7 @@ class ChatViewModel @Inject constructor(
                     AgentStatus.WAITING_CONFIRMATION -> islandStateManager.show(AIOSIslandState.ERROR, "Confirmation needed", autoDismissMs = 0L)
                     AgentStatus.COMPLETED     -> islandStateManager.show(AIOSIslandState.TASK_CREATED, "Done", autoDismissMs = 2500L)
                     AgentStatus.FAILED        -> islandStateManager.show(AIOSIslandState.ERROR, "Couldn't complete", autoDismissMs = 3000L)
+                    AgentStatus.CANCELLED     -> islandStateManager.dismiss()
                     AgentStatus.IDLE          -> { /* preserve current island or let auto-dismiss handle */ }
                 }
             }

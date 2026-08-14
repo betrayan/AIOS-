@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import com.buddy.aios.core.ai.summary.SummaryValidator
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -33,6 +34,7 @@ class AIOrchestrator @Inject constructor(
     private val contextManager: ContextManager,
     private val memoryExtractor: MemoryExtractor,
     private val toolExecutor: ToolExecutor,
+    private val summaryValidator: SummaryValidator,
     @Named("local") private val localProvider: AIProvider,
     @Named("cloud") private val cloudProvider: AIProvider,
     private val buddyModeRepository: IBuddyModeRepository,
@@ -40,6 +42,7 @@ class AIOrchestrator @Inject constructor(
     private val taskRepository: ITaskRepository,
     private val userRepository: IUserRepository,
     private val dispatchers: DispatcherProvider,
+    private val intelligenceEngine: com.buddy.aios.core.ai.brain.PersonalIntelligenceEngine,
 ) : AIEngine {
 
     companion object {
@@ -74,6 +77,27 @@ class AIOrchestrator @Inject constructor(
         val activeTasks = withContext(dispatchers.io) {
             val taskResult = taskRepository.getUpcomingTasks()
             (taskResult as? Result.Success)?.value?.take(5) ?: emptyList()
+        }
+
+        // 1. Evaluate Stage 8 Personal Intelligence Decision
+        val snapshot = intelligenceEngine.buildSnapshot(
+            userProfile = userProfile,
+            buddyMode = buddyMode,
+            activeTasks = activeTasks,
+            memories = relevantMemories,
+        )
+
+        val decision = intelligenceEngine.processQuery(prompt.userMessage, snapshot)
+        if (decision.primaryTextResponse.isNotBlank() && decision.actionType != com.buddy.aios.core.ai.brain.ActionType.EXECUTE_TOOL) {
+            val voiceSummary = summaryValidator.validateAndSanitize(decision.primaryTextResponse, decision.voiceTextResponse ?: "")
+            val aiResponse = com.buddy.aios.core.ai.summary.AIResponse(
+                fullResponse = decision.primaryTextResponse,
+                displayContent = decision.primaryTextResponse,
+                voiceSummary = voiceSummary,
+                intent = "PERSONAL_BRAIN",
+            )
+            collector.emit(Result.Success(AIChunk(text = aiResponse.displayContent, isComplete = true)))
+            return@flow
         }
 
         val enrichedContext = contextManager.buildEnrichedContext(
@@ -142,6 +166,7 @@ class AIOrchestrator @Inject constructor(
                         if (chunk.isComplete) {
                             val parseResult = IntentParser.parse(fullResponseText)
                             val finalText = parseResult.cleanedText
+                            val voiceSummary = summaryValidator.validateAndSanitize(finalText, parseResult.cleanedText)
 
                             val tool = parseResult.tool
                             var executedToolResult: ToolResult? = null

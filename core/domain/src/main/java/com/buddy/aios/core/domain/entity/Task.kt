@@ -33,5 +33,32 @@ data class Task(
     val notificationId: Int = id.hashCode(),
     val timezone: String = TimeZone.getDefault().id,
     val status: TaskStatus = if (isCompleted) TaskStatus.COMPLETED else TaskStatus.PENDING,
-    val recurrenceRule: String? = null, // e.g., "DAILY", "WEEKLY", null
-)
+    val recurrenceRule: String? = null, // e.g., "DAILY", "WEEKLY", "WEEKDAYS", null
+    val deliveryState: ReminderDeliveryState = if (isCompleted) ReminderDeliveryState.COMPLETED else ReminderDeliveryState.SCHEDULED,
+    val voiceEnabled: Boolean = true,
+    val notificationEnabled: Boolean = true,
+    val morningBriefingEligible: Boolean = true,
+) {
+    val schedule: ReminderSchedule?
+        get() {
+            val trigger = reminderTime ?: dueDate ?: return null
+            val rule = when (recurrenceRule?.uppercase()) {
+                "DAILY" -> RepeatRule.DAILY
+                "WEEKLY" -> RepeatRule.WEEKLY
+                "WEEKDAYS" -> RepeatRule.WEEKDAYS
+                "MORNING" -> RepeatRule.MORNING
+                null, "" -> RepeatRule.ONE_TIME
+                else -> RepeatRule.CUSTOM_RECURRING
+            }
+            return ReminderSchedule(
+                triggerAt = trigger,
+                timezone = timezone,
+                repeatRule = rule,
+                deliveryState = deliveryState,
+                enabled = !isCompleted && status != TaskStatus.CANCELLED,
+                notificationEnabled = notificationEnabled,
+                voiceEnabled = voiceEnabled,
+                morningBriefingEligible = morningBriefingEligible,
+            )
+        }
+}

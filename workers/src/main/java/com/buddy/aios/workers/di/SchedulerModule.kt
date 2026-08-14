@@ -1,6 +1,8 @@
 package com.buddy.aios.workers.di
 
+import com.buddy.aios.core.domain.repository.IReminderEngine
 import com.buddy.aios.core.domain.repository.IReminderScheduler
+import com.buddy.aios.workers.notification.ReminderEngine
 import com.buddy.aios.workers.notification.ReminderScheduler
 import dagger.Binds
 import dagger.Module
@@ -17,4 +19,10 @@ abstract class SchedulerModule {
     abstract fun bindReminderScheduler(
         impl: ReminderScheduler
     ): IReminderScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindReminderEngine(
+        impl: ReminderEngine
+    ): IReminderEngine
 }

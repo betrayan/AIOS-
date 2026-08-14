@@ -26,6 +26,12 @@ fun TaskEntity.toDomain(): Task {
         if (isCompleted) TaskStatus.COMPLETED else TaskStatus.PENDING
     }
 
+    val parsedDeliveryState = try {
+        com.buddy.aios.core.domain.entity.ReminderDeliveryState.valueOf(deliveryState)
+    } catch (e: Exception) {
+        if (isCompleted) com.buddy.aios.core.domain.entity.ReminderDeliveryState.COMPLETED else com.buddy.aios.core.domain.entity.ReminderDeliveryState.SCHEDULED
+    }
+
     return Task(
         id = id,
         title = title,
@@ -41,6 +47,10 @@ fun TaskEntity.toDomain(): Task {
         timezone = timezone,
         status = parsedStatus,
         recurrenceRule = recurrenceRule,
+        deliveryState = parsedDeliveryState,
+        voiceEnabled = voiceEnabled,
+        notificationEnabled = notificationEnabled,
+        morningBriefingEligible = morningEligible,
     )
 }
 
@@ -61,5 +71,9 @@ fun Task.toEntity(): TaskEntity {
         timezone = timezone,
         status = status.name,
         recurrenceRule = recurrenceRule,
+        deliveryState = deliveryState.name,
+        voiceEnabled = voiceEnabled,
+        notificationEnabled = notificationEnabled,
+        morningEligible = morningBriefingEligible,
     )
 }

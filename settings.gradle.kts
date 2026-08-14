@@ -44,6 +44,7 @@ include(":feature:home")
 include(":feature:memory")
 include(":feature:settings")
 include(":feature:onboarding")
+include(":feature:voice")
 
 // ── Workers ───────────────────────────────────────────────────────────────────
 include(":workers")

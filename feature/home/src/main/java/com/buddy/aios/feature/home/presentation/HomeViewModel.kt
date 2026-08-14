@@ -34,6 +34,7 @@ class HomeViewModel @Inject constructor(
     private val memoryRepository: IMemoryRepository,
     private val userRepository: IUserRepository,
     private val morningContextEngine: MorningContextEngine,
+    private val priorityEngine: com.buddy.aios.core.ai.brain.PriorityEngine,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -53,12 +54,26 @@ class HomeViewModel @Inject constructor(
                 memories = memories,
             )
 
+            val topTask = priorityEngine.selectTopPriorities(tasks, maxItems = 1).firstOrNull()?.task
+            val reminders = tasks.filter { it.isReminder || it.reminderTime != null }
+            val name = userProfile?.preferredName?.ifBlank { userProfile.name } ?: "Vijay"
+
+            val subtitle = when {
+                tasks.size >= 5 -> "You have a busy day ahead."
+                tasks.isNotEmpty() -> "Ready to make today productive?"
+                else -> "Your day looks pretty light."
+            }
+
             HomeUiState(
                 userGreeting = morningSummary.greeting,
+                userName = name,
+                subtitleText = subtitle,
                 buddyMode = mode,
-                privacyLevel = userProfile.privacyLevel,
+                privacyLevel = userProfile?.privacyLevel ?: com.buddy.aios.core.domain.entity.PrivacyLevel.LOCAL_ONLY,
                 conversations = conversations,
                 activeTasks = tasks,
+                topPriorityTask = topTask,
+                reminderCount = reminders.size,
                 memoryCount = memories.size,
                 morningSummary = morningSummary,
                 isLoading = false,

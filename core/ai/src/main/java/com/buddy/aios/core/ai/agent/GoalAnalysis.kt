@@ -42,6 +42,13 @@ sealed interface GoalAnalysis {
         val originalRequest: String,
     ) : GoalAnalysis
 
+    /** Follow-up request modifying or referencing existing context or plan. */
+    data class FollowUp(
+        val originalRequest: String,
+        val targetReference: String = "",
+        val modificationType: String = "",
+    ) : GoalAnalysis
+
     /** Ambiguous request needing user clarification (e.g., "Delete it"). */
     data class AmbiguousRequest(
         val originalRequest: String,

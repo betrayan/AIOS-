@@ -21,7 +21,9 @@ data class AgentGoal(
  */
 enum class AgentGoalStatus {
     PENDING,
+    UNDERSTANDING,
     PLANNING,
+    WAITING_CONFIRMATION,
     WAITING_FOR_USER,
     EXECUTING,
     VERIFYING,
@@ -36,8 +38,11 @@ enum class AgentGoalStatus {
 enum class GoalType {
     QUESTION,
     COMMAND,
+    TASK,
     GOAL,
     PROBLEM,
     CONVERSATION,
+    FOLLOW_UP,
+    CLARIFICATION_REQUIRED,
     AMBIGUOUS_REQUEST,
 }

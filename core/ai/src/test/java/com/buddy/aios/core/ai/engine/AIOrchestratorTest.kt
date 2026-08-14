@@ -1,5 +1,6 @@
 package com.buddy.aios.core.ai.engine
 
+import com.buddy.aios.core.ai.summary.SummaryValidator
 import app.cash.turbine.test
 import com.buddy.aios.core.ai.context.ContextManager
 import com.buddy.aios.core.ai.memory.MemoryExtractor
@@ -67,11 +68,22 @@ class AIOrchestratorTest {
         coEvery { memoryRepository.searchMemories(any()) } returns Result.Success(emptyList())
         coEvery { taskRepository.getUpcomingTasks() } returns Result.Success(emptyList())
 
+        val intelligenceEngine = com.buddy.aios.core.ai.brain.PersonalIntelligenceEngine(
+            situationDetector = com.buddy.aios.core.ai.brain.SituationDetector(),
+            contextScorer = com.buddy.aios.core.ai.brain.ContextScorer(),
+            priorityEngine = com.buddy.aios.core.ai.brain.PriorityEngine(),
+            decisionEngine = com.buddy.aios.core.ai.brain.DecisionEngine(com.buddy.aios.core.ai.brain.PriorityEngine()),
+            goalAnalyzer = com.buddy.aios.core.ai.agent.GoalAnalyzer(),
+            proactivePolicy = com.buddy.aios.core.ai.brain.ProactiveNotificationPolicy(),
+            conversationContextManager = com.buddy.aios.core.ai.context.ConversationContextManager(),
+        )
+
         orchestrator = AIOrchestrator(
             policy = policy,
             contextManager = contextManager,
             memoryExtractor = memoryExtractor,
             toolExecutor = toolExecutor,
+            summaryValidator = SummaryValidator(),
             localProvider = localProvider,
             cloudProvider = cloudProvider,
             buddyModeRepository = buddyModeRepository,
@@ -79,6 +91,7 @@ class AIOrchestratorTest {
             taskRepository = taskRepository,
             userRepository = userRepository,
             dispatchers = dispatchers,
+            intelligenceEngine = intelligenceEngine,
         )
     }
 

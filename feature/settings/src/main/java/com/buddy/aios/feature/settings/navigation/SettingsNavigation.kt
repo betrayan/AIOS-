@@ -7,6 +7,9 @@ import com.buddy.aios.feature.settings.presentation.SettingsScreen
 
 fun NavGraphBuilder.settingsNavGraph(navController: NavController) {
     composable(route = "settings") {
-        SettingsScreen(onNavigateBack = { navController.popBackStack() })
+        SettingsScreen(
+            onNavigateBack = { navController.popBackStack() },
+            onNavigateToMemory = { navController.navigate("memory") }
+        )
     }
 }

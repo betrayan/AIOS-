@@ -1,5 +1,6 @@
 package com.buddy.aios.workers.notification
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -13,11 +14,18 @@ import com.buddy.aios.core.database.dao.TaskDao
 import com.buddy.aios.core.database.entity.TaskEntity
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.repository.IBuddyModeRepository
+import com.buddy.aios.core.domain.repository.IReminderEngine
 import com.buddy.aios.core.domain.repository.IReminderScheduler
+import com.buddy.aios.core.common.voice.IVoiceOutputManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 
 /**
@@ -49,6 +57,13 @@ class ReminderReceiver : BroadcastReceiver() {
     @Inject
     lateinit var scheduler: IReminderScheduler
 
+    @Inject
+    lateinit var reminderEngine: IReminderEngine
+
+    @Inject
+    lateinit var ttsManager: IVoiceOutputManager
+
+    @SuppressLint("MissingPermission")
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_TRIGGER_REMINDER) return
 
@@ -63,25 +78,16 @@ class ReminderReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. Verify task exists & is not already completed
-                val taskEntity = taskDao.getById(taskId)
-                if (taskEntity == null) {
-                    AppLogger.w(TAG, "Task id=$taskId not found in database — skipping notification")
+                val handled = reminderEngine.handleReminderTriggered(taskId, notificationId)
+                if (!handled) {
+                    AppLogger.d(TAG, "Reminder engine ignored trigger for task id=$taskId")
                     return@launch
                 }
 
-                if (taskEntity.isCompleted) {
-                    AppLogger.d(TAG, "Task id=$taskId is already completed — skipping notification")
-                    return@launch
-                }
+                val taskEntity = taskDao.getById(taskId) ?: return@launch
+                val task = taskEntity.toDomain()
 
-                val buddyMode = buddyModeRepository.getBuddyMode()
-                if (buddyMode == BuddyMode.OFF) {
-                    AppLogger.d(TAG, "BuddyMode is OFF — skipping notification for task id=$taskId")
-                    return@launch
-                }
-
-                // 2. Build Notification Actions (DONE & SNOOZE)
+                // Build Notification Actions (DONE & SNOOZE)
                 val mainAppIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     putExtra("navigate_to", "task")
@@ -142,22 +148,18 @@ class ReminderReceiver : BroadcastReceiver() {
                     AppLogger.w(TAG, "Notification permission denied — could not post notification for task id=$taskId")
                 }
 
-                // 3. Handle Recurring Reschedule if applicable
-                if (!recurrenceRule.isNullOrEmpty()) {
-                    val nextTrigger = when (recurrenceRule.uppercase()) {
-                        "DAILY"  -> System.currentTimeMillis() + (24 * 3600 * 1000L)
-                        "WEEKLY" -> System.currentTimeMillis() + (7 * 24 * 3600 * 1000L)
-                        else -> 0L
+                // Voice Reminder Delivery (if enabled and BuddyMode allows)
+                val buddyMode = buddyModeRepository.getBuddyMode()
+                if (task.voiceEnabled && (buddyMode == BuddyMode.ACTIVE || buddyMode == BuddyMode.QUIET)) {
+                    val timeString = SimpleDateFormat("h:mm a", Locale.ENGLISH).apply {
+                        timeZone = TimeZone.getTimeZone(task.timezone)
+                    }.format(Date())
+
+                    val voiceText = "Hey Buddy, it's $timeString. It's time to ${task.title}."
+                    withContext(Dispatchers.Main) {
+                        ttsManager.speak(voiceText)
                     }
-                    if (nextTrigger > 0L) {
-                        taskDao.updateReminderTime(taskId, nextTrigger, "PENDING")
-                        val updatedEntity: TaskEntity? = taskDao.getById(taskId)
-                        if (updatedEntity != null) {
-                            val updatedDomain = updatedEntity.toDomain()
-                            scheduler.schedule(updatedDomain)
-                            AppLogger.d(TAG, "Rescheduled recurring task id=$taskId for nextTrigger=$nextTrigger")
-                        }
-                    }
+                    AppLogger.d(TAG, "Spoken voice reminder triggered for task id=$taskId: '$voiceText'")
                 }
 
             } catch (e: Exception) {

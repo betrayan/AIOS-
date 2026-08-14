@@ -1,5 +1,6 @@
 package com.buddy.aios.core.common.notification
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -103,6 +104,7 @@ class AIOSNotificationManager @Inject constructor(
         }
     }
 
+    @SuppressLint("MissingPermission")
     fun showMorningNotification(
         title: String,
         body: String,
@@ -134,6 +136,7 @@ class AIOSNotificationManager @Inject constructor(
         }
     }
 
+    @SuppressLint("MissingPermission")
     fun showReminderNotification(
         title: String,
         body: String,

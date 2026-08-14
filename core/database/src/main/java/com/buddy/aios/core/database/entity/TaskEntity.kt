@@ -57,4 +57,16 @@ data class TaskEntity(
 
     @ColumnInfo(name = "recurrence_rule")
     val recurrenceRule: String? = null,
+
+    @ColumnInfo(name = "delivery_state", defaultValue = "SCHEDULED")
+    val deliveryState: String = "SCHEDULED",
+
+    @ColumnInfo(name = "voice_enabled", defaultValue = "1")
+    val voiceEnabled: Boolean = true,
+
+    @ColumnInfo(name = "notification_enabled", defaultValue = "1")
+    val notificationEnabled: Boolean = true,
+
+    @ColumnInfo(name = "morning_eligible", defaultValue = "1")
+    val morningEligible: Boolean = true,
 )

@@ -6,7 +6,7 @@ import android.content.Intent
 import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.data.mapper.toDomain
 import com.buddy.aios.core.database.dao.TaskDao
-import com.buddy.aios.core.domain.repository.IReminderScheduler
+import com.buddy.aios.core.domain.repository.IReminderEngine
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,10 +24,7 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     @Inject
-    lateinit var taskDao: TaskDao
-
-    @Inject
-    lateinit var scheduler: IReminderScheduler
+    lateinit var reminderEngine: IReminderEngine
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
@@ -38,19 +35,8 @@ class BootReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val now = System.currentTimeMillis()
-                val pendingEntities = taskDao.getPendingReminders()
-
-                var rescheduledCount = 0
-                pendingEntities.forEach { entity ->
-                    val reminderTime = entity.reminderTime ?: 0L
-                    if (!entity.isCompleted && reminderTime > now) {
-                        val domainTask = entity.toDomain()
-                        val success = scheduler.schedule(domainTask)
-                        if (success) rescheduledCount++
-                    }
-                }
-                AppLogger.d(TAG, "Restored and rescheduled $rescheduledCount pending reminder(s) after reboot")
+                val restoredCount = reminderEngine.restoreReminders()
+                AppLogger.d(TAG, "Restored and rescheduled $restoredCount pending reminder(s) after reboot/update")
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Failed to reschedule reminders after boot", e)
             } finally {

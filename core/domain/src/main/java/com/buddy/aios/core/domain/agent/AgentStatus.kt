@@ -13,4 +13,5 @@ enum class AgentStatus {
     VERIFYING,
     COMPLETED,
     FAILED,
+    CANCELLED,
 }

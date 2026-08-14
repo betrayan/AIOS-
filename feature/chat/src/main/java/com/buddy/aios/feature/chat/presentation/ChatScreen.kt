@@ -79,11 +79,11 @@ import com.buddy.aios.core.ui.animation.clickableWithScale
 import com.buddy.aios.core.ui.components.BuddyOrb
 import com.buddy.aios.core.ui.components.GlassCard
 import com.buddy.aios.core.ui.components.OrbState
-import com.buddy.aios.core.ui.components.VoiceWaveform
 import com.buddy.aios.core.ui.shapes.BuddyShapes
 import com.buddy.aios.core.ui.theme.BuddyColors
 import com.buddy.aios.feature.chat.voice.TextToSpeechState
 import com.buddy.aios.feature.chat.voice.VoiceInputState
+import com.buddy.aios.feature.chat.voice.VoiceSessionState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -201,6 +201,28 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // ── Dynamic Island Voice Capsule (Top Area) ─────────────────────
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                com.buddy.aios.feature.chat.presentation.components.DynamicIslandVoiceCapsule(
+                    sessionState = when {
+                        isListening -> VoiceSessionState.Listening
+                        isSpeaking -> VoiceSessionState.Speaking("AIOS Response")
+                        isStreaming -> VoiceSessionState.Thinking
+                        else -> VoiceSessionState.Idle
+                    },
+                    onCapsuleClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            viewModel.toggleVoiceInput()
+                        } else {
+                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                )
+            }
+
             // ── Messages List ──────────────────────────────────────────────────
             Box(modifier = Modifier.weight(1f)) {
                 when (val state = uiState) {
@@ -269,26 +291,7 @@ fun ChatScreen(
                 }
             }
 
-            // ── Animated Voice Waveform Overlay (when listening/speaking) ──────
-            AnimatedVisibility(
-                visible = isListening || isSpeaking,
-                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BuddyColors.SurfaceDark)
-                        .padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    VoiceWaveform(
-                        isActive = isListening || isSpeaking,
-                        activeColor = if (isListening) BuddyColors.Rose else BuddyColors.PurpleLight,
-                        barCount = 18,
-                    )
-                }
-            }
+
 
             // ── Bottom Input Bar ───────────────────────────────────────────────
             GlassCard(
