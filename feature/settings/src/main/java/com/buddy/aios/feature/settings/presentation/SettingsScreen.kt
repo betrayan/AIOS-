@@ -1,5 +1,6 @@
 package com.buddy.aios.feature.settings.presentation
 
+import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -325,6 +326,77 @@ fun SettingsScreen(
                         GlassCard(modifier = Modifier.fillMaxWidth()) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 val m = state.morningSettings
+
+                                // ── Morning Wish ON/OFF + Time Picker ──────────────────────────
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text("Morning Wish", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                                        Text("Buddy wakes you with a voice greeting", style = MaterialTheme.typography.bodySmall, color = BuddyColors.TextSecondary)
+                                    }
+                                    Switch(
+                                        checked = m.isMorningWishEnabled,
+                                        onCheckedChange = { viewModel.onUpdateMorningSettings(m.copy(isMorningWishEnabled = it)) },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = BuddyColors.Cyan, checkedTrackColor = BuddyColors.PurpleGlow),
+                                    )
+                                }
+
+                                if (m.isMorningWishEnabled) {
+                                    // Time picker row — shows current scheduled time and opens system TimePickerDialog
+                                    val morningWishTimeLabel = String.format(
+                                        Locale.ENGLISH,
+                                        "%02d:%02d %s",
+                                        if (m.morningWishHour % 12 == 0) 12 else m.morningWishHour % 12,
+                                        m.morningWishMinute,
+                                        if (m.morningWishHour < 12) "AM" else "PM"
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column {
+                                            Text("Wake-up Time", style = MaterialTheme.typography.bodyMedium, color = Color.White)
+                                            Text(
+                                                text = morningWishTimeLabel,
+                                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                color = BuddyColors.Cyan
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                // Use Android TimePickerDialog which is 12/24h aware and correct
+                                                TimePickerDialog(
+                                                    context,
+                                                    { _, selectedHour, selectedMinute ->
+                                                        // selectedHour is always 0..23 — no 12/24h conversion needed
+                                                        viewModel.onUpdateMorningSettings(
+                                                            m.copy(
+                                                                morningWishHour = selectedHour,
+                                                                morningWishMinute = selectedMinute
+                                                            )
+                                                        )
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Morning Wish set to ${String.format(Locale.ENGLISH, "%02d:%02d", selectedHour, selectedMinute)}",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    },
+                                                    m.morningWishHour,   // initial hour (0..23)
+                                                    m.morningWishMinute, // initial minute (0..59)
+                                                    true                 // is24HourView — stored as 24h, displayed correctly
+                                                ).show()
+                                            }
+                                        ) {
+                                            Text("Change", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                // ── Morning Briefing toggle ─────────────────────────────────
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,

@@ -31,6 +31,7 @@ sealed interface VoiceInputState {
     data class PartialResult(val text: String) : VoiceInputState
     data class FinalResult(val text: String) : VoiceInputState
     data class Processing(val text: String) : VoiceInputState
+    data object SpeechTimeout : VoiceInputState
     data class Error(val message: String) : VoiceInputState
     data object Disabled : VoiceInputState
 }
@@ -42,9 +43,11 @@ sealed interface VoiceInputState {
 class VoiceInputManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val buddyModeRepository: IBuddyModeRepository,
+    private val ttsManager: TextToSpeechManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var speechRecognizer: SpeechRecognizer? = null
+    private var isRetrying = false
 
     private val _state = MutableStateFlow<VoiceInputState>(VoiceInputState.Idle)
     val state: StateFlow<VoiceInputState> = _state.asStateFlow()
@@ -66,6 +69,11 @@ class VoiceInputManager @Inject constructor(
         }
     }
 
+    fun playMicSound(isOn: Boolean) {
+        // Mic sound completely deactivated to ensure zero ON/OFF tone sounds are emitted
+        AppLogger.d(TAG, "playMicSound (isOn=$isOn) — deactivated for silent operation")
+    }
+
     fun isPermissionGranted(): Boolean {
         return ContextCompat.checkSelfPermission(
             context,
@@ -74,6 +82,11 @@ class VoiceInputManager @Inject constructor(
     }
 
     fun startListening() {
+        isRetrying = false
+        startListeningInternal()
+    }
+
+    private fun startListeningInternal() {
         if (!currentBuddyMode.canVoiceInput) {
             AppLogger.w(TAG, "Voice input blocked: BuddyMode is $currentBuddyMode")
             _state.value = VoiceInputState.Disabled
@@ -92,11 +105,12 @@ class VoiceInputManager @Inject constructor(
             return
         }
 
-        stopListening()
-
         try {
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-                setRecognitionListener(createListener())
+            if (speechRecognizer == null) {
+                AppLogger.d(TAG, "Recognizer: CREATED")
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                    setRecognitionListener(createListener())
+                }
             }
 
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -104,11 +118,14 @@ class VoiceInputManager @Inject constructor(
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10000L)
             }
 
             speechRecognizer?.startListening(intent)
             _state.value = VoiceInputState.Listening
-            AppLogger.d(TAG, "SpeechRecognizer started listening successfully")
+            AppLogger.d(TAG, "Recognizer: STARTED successfully")
         } catch (e: Exception) {
             AppLogger.e(TAG, "Failed to start SpeechRecognizer", e)
             _state.value = VoiceInputState.Error("Couldn't start microphone")
@@ -119,11 +136,10 @@ class VoiceInputManager @Inject constructor(
     fun stopListening() {
         try {
             speechRecognizer?.stopListening()
-            speechRecognizer?.destroy()
+            AppLogger.d(TAG, "Recognizer: STOPPED")
         } catch (e: Exception) {
-            AppLogger.w(TAG, "Error destroying SpeechRecognizer: ${e.message}")
+            AppLogger.w(TAG, "Error stopping SpeechRecognizer: ${e.message}")
         } finally {
-            speechRecognizer = null
             if (_state.value is VoiceInputState.Listening || _state.value is VoiceInputState.PartialResult) {
                 _state.value = VoiceInputState.Idle
             }
@@ -134,6 +150,7 @@ class VoiceInputManager @Inject constructor(
         try {
             speechRecognizer?.cancel()
             speechRecognizer?.destroy()
+            AppLogger.d(TAG, "Recognizer: DESTROYED")
         } catch (e: Exception) {
             AppLogger.w(TAG, "Error cancelling SpeechRecognizer: ${e.message}")
         } finally {
@@ -151,12 +168,21 @@ class VoiceInputManager @Inject constructor(
     }
 
     private fun createListener(): RecognitionListener = object : RecognitionListener {
+        // Guards against the spurious onError(ERROR_CLIENT=5) that Android's SpeechRecognizer
+        // fires as a cleanup event immediately after onResults on some devices (e.g. iQOO Neo 6).
+        // Once a valid result has been delivered, any subsequent error for this recognizer
+        // instance is a no-op — the session must not be destroyed before TTS runs.
+        private var hasDeliveredResult = false
         override fun onReadyForSpeech(params: Bundle?) {
             AppLogger.d(TAG, "onReadyForSpeech")
         }
 
         override fun onBeginningOfSpeech() {
             AppLogger.d(TAG, "onBeginningOfSpeech")
+            if (ttsManager.state.value is TextToSpeechState.Speaking) {
+                AppLogger.d(TAG, "User speech detected during TTS -> Interrupting TTS immediately!")
+                ttsManager.stop()
+            }
         }
 
         override fun onRmsChanged(rmsdB: Float) {}
@@ -174,16 +200,43 @@ class VoiceInputManager @Inject constructor(
         }
 
         override fun onError(error: Int) {
+            // Ignore cleanup errors that arrive after a valid result has already been delivered.
+            // Android fires onError(ERROR_CLIENT=5) as a recognizer teardown artifact on some
+            // devices immediately after onResults. If we let it propagate, it kills the voice
+            // session before TTS has a chance to run.
+            if (hasDeliveredResult) {
+                AppLogger.d(TAG, "Ignoring post-result recognizer error (code=$error) — result already delivered")
+                return
+            }
+
+            if ((error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) && !isRetrying) {
+                isRetrying = true
+                AppLogger.w(TAG, "Recognizer: RETRY (binding/busy error $error). Retrying after 200ms...")
+                stopListening()
+                scope.launch {
+                    kotlinx.coroutines.delay(200)
+                    if (_state.value !is VoiceInputState.Idle && _state.value !is VoiceInputState.Disabled) {
+                        startListeningInternal()
+                    }
+                }
+                return
+            }
+
+            if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
+                AppLogger.d(TAG, "SpeechRecognizer silence timeout (code=$error) — waiting for user input")
+                _state.value = VoiceInputState.SpeechTimeout
+                stopListening()
+                return
+            }
+
             val userMessage = when (error) {
                 SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                 SpeechRecognizer.ERROR_CLIENT -> "Client speech error"
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
                 SpeechRecognizer.ERROR_NETWORK -> "Network error during speech recognition"
                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout during speech"
-                SpeechRecognizer.ERROR_NO_MATCH -> "Couldn't hear that. Please try again."
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Microphone is busy"
                 SpeechRecognizer.ERROR_SERVER -> "Speech server error"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
                 else -> "Speech recognition error ($error)"
             }
             AppLogger.w(TAG, "SpeechRecognizer onError: code=$error msg=$userMessage")
@@ -194,8 +247,9 @@ class VoiceInputManager @Inject constructor(
         override fun onResults(results: Bundle?) {
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull()?.trim().orEmpty()
-            AppLogger.d(TAG, "onResults text: $text")
+            AppLogger.d(TAG, "onResults text length=${text.length}")
             if (text.isNotBlank()) {
+                hasDeliveredResult = true
                 _state.value = VoiceInputState.FinalResult(text)
             } else {
                 _state.value = VoiceInputState.Error("Couldn't hear that. Please try again.")
@@ -204,6 +258,9 @@ class VoiceInputManager @Inject constructor(
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            // Do NOT stop TTS on partial results — partials can be triggered by background noise
+            // or the tail end of TTS audio itself. TTS is interrupted only in onBeginningOfSpeech
+            // when confirmed human voice onset is detected.
             val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val text = matches?.firstOrNull()?.trim().orEmpty()
             if (text.isNotBlank()) {

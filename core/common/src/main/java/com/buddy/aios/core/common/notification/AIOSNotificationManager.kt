@@ -60,7 +60,7 @@ class AIOSNotificationManager @Inject constructor(
             val morningChannel = NotificationChannel(
                 CHANNEL_MORNING,
                 "AIOS Morning Briefing",
-                NotificationManager.IMPORTANCE_DEFAULT,
+                NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Daily morning context & sleep summary"
                 enableVibration(true)

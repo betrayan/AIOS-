@@ -387,7 +387,7 @@ private fun CompactVoiceCapsule(
 ) {
     GlassCard(
         modifier = Modifier
-            .width(200.dp)
+            .width(220.dp)
             .height(48.dp)
             .clickableWithScale(onClick = onCapsuleClick),
         shape = BuddyShapes.Pill,
@@ -408,8 +408,8 @@ private fun CompactVoiceCapsule(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = if (buddyMode == BuddyMode.OFF) "AIOS Off" else "● AIOS Voice · Tap",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                text = if (buddyMode == BuddyMode.OFF) "AIOS Off" else "● Voice · Tap",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
                 color = Color.White,
             )
         }

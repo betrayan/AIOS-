@@ -6,6 +6,8 @@ import javax.inject.Singleton
 
 sealed interface VoiceCommand {
     data object StopListening : VoiceCommand
+    data object PauseListening : VoiceCommand
+    data object ResumeListening : VoiceCommand
     data class SetVoiceMode(val enabled: Boolean) : VoiceCommand
     data class SetBuddyModeCommand(val mode: BuddyMode) : VoiceCommand
     data object MorningWishCommand : VoiceCommand
@@ -37,14 +39,27 @@ class VoiceCommandParser @Inject constructor() {
         val lower = userSpeech.lowercase().trim()
 
         return when {
-            // 1. Voice Stop Commands
+            // 1. Voice Stop / Exit Commands
             lower.contains("stop listening") || lower.contains("stop voice mode") ||
-            lower.contains("turn off microphone") || lower.contains("disable microphone") ->
+            lower.contains("turn off microphone") || lower.contains("turn microphone off") ||
+            lower.contains("disable microphone") || lower.contains("end voice conversation") ||
+            lower.contains("stop continuous conversation") || lower.contains("stop conversation") ||
+            lower == "that's all" || lower == "goodbye" || lower == "bye" || lower == "stop" ->
                 VoiceCommand.StopListening
 
-            // 2. Continuous Voice Mode Commands
+            // 1b. Pause / Resume Voice Commands
+            lower.contains("pause listening") || lower.contains("pause voice mode") ->
+                VoiceCommand.PauseListening
+
+            lower.contains("resume listening") || lower.contains("resume voice mode") ->
+                VoiceCommand.ResumeListening
+
+            // 2. Continuous Voice Mode Activation Commands
             lower.contains("turn on voice mode") || lower.contains("enable continuous voice") ||
-            lower.contains("start continuous voice") ->
+            lower.contains("start continuous voice") || lower.contains("start continuous conversation") ||
+            lower.contains("let's talk") || lower.contains("keep listening") ||
+            lower.contains("start conversation mode") || lower.contains("conversation mode") ||
+            lower.contains("turn microphone on") || lower.contains("turn on microphone") ->
                 VoiceCommand.SetVoiceMode(enabled = true)
 
             lower.contains("turn off voice mode") || lower.contains("disable continuous voice") ->
@@ -95,10 +110,10 @@ class VoiceCommandParser @Inject constructor() {
             lower.contains("explain in detail") || lower.contains("explain it in detail") || lower.contains("detailed explanation") ->
                 VoiceCommand.SummaryCommand.DetailedExplanation
 
-            // 6. Morning Wish Commands
-            lower.contains("morning wish") || lower.contains("aios, morning wish") ||
-            lower.contains("give me my morning wish") || lower.contains("good morning aios") ||
-            lower.contains("start morning briefing") ->
+            // 6. Morning Wish Commands (On-demand trigger ONLY — configuration handled via tool)
+            (lower == "morning wish" || lower == "start morning wish" || lower == "give me my morning wish" ||
+             lower == "good morning aios" || lower == "start morning briefing" || lower == "aios morning wish") &&
+            !lower.contains("set") && !lower.contains("change") && !lower.contains("for") && !lower.contains("time") ->
                 VoiceCommand.MorningWishCommand
 
             // 7. Natural Morning Wish Acknowledgements

@@ -8,6 +8,8 @@ import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.canVoiceOutput
 import com.buddy.aios.core.domain.repository.IBuddyModeRepository
 import com.buddy.aios.core.common.voice.IVoiceOutputManager
+import com.buddy.aios.core.ui.island.AIOSIslandState
+import com.buddy.aios.core.ui.island.AIOSIslandStateManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,7 @@ sealed interface TextToSpeechState {
 class TextToSpeechManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val buddyModeRepository: IBuddyModeRepository,
+    private val islandStateManager: AIOSIslandStateManager,
 ) : TextToSpeech.OnInitListener, IVoiceOutputManager {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -71,7 +74,16 @@ class TextToSpeechManager @Inject constructor(
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(Locale.getDefault())
+            var result = tts?.setLanguage(Locale.getDefault())
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                AppLogger.w(TAG, "Default locale (${Locale.getDefault()}) TTS data missing (code=$result). Falling back to Locale.US")
+                result = tts?.setLanguage(Locale.US)
+            }
+            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                AppLogger.w(TAG, "Locale.US TTS data missing (code=$result). Falling back to Locale.ENGLISH")
+                result = tts?.setLanguage(Locale.ENGLISH)
+            }
+
             val isSupported = result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
             isInitialized = isSupported
 
@@ -79,7 +91,7 @@ class TextToSpeechManager @Inject constructor(
                 tts?.setSpeechRate(0.85f)
                 tts?.setPitch(1.0f)
                 tts?.setOnUtteranceProgressListener(createProgressListener())
-                AppLogger.d(TAG, "TextToSpeech initialized successfully with speechRate=0.85f")
+                AppLogger.d(TAG, "TextToSpeech initialized successfully (isInitialized=true, speechRate=0.85f)")
 
                 if (currentBuddyMode.canVoiceOutput) {
                     _state.value = TextToSpeechState.Idle
@@ -102,21 +114,32 @@ class TextToSpeechManager @Inject constructor(
             return
         }
 
-        if (!isInitialized || text.isBlank()) {
-            AppLogger.w(TAG, "Cannot speak: initialized=$isInitialized, textLength=${text.length}")
+        val textAvailable = text.isNotBlank()
+        AppLogger.d(TAG, "VoiceOutput: textAvailable=$textAvailable, textLength=${text.length}, isInitialized=$isInitialized")
+
+        if (!isInitialized || !textAvailable) {
+            AppLogger.w(TAG, "Cannot speak: initialized=$isInitialized, textAvailable=$textAvailable")
             return
         }
 
-        stop() // Interrupt any ongoing utterance — single active TTS request
+        // Silently flush any ongoing utterance WITHOUT emitting Idle state.
+        // Emitting Idle here would cause VoiceConversationSession to see TTS-done and
+        // immediately schedule listening restart before the new utterance even begins.
+        flushTtsEngine()
 
         try {
             val utteranceId = "buddy_tts_${System.currentTimeMillis()}"
             val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             if (result == TextToSpeech.SUCCESS) {
                 _state.value = TextToSpeechState.Speaking(text)
-                AppLogger.d(TAG, "TTS speaking started for ${text.length} chars")
+                islandStateManager.show(
+                    state = AIOSIslandState.SPEAKING,
+                    message = "🔊 Speaking...",
+                    autoDismissMs = 0L,
+                )
+                AppLogger.d(TAG, "VoiceOutput: speak() result=SUCCESS for ${text.length} chars")
             } else {
-                AppLogger.w(TAG, "TTS speak() returned error code $result")
+                AppLogger.w(TAG, "VoiceOutput: speak() result=ERROR code $result")
                 _state.value = TextToSpeechState.Error("Failed to synthesize speech")
             }
         } catch (e: Exception) {
@@ -125,17 +148,36 @@ class TextToSpeechManager @Inject constructor(
         }
     }
 
+    /**
+     * Stop any active speech and emit [TextToSpeechState.Idle].
+     * Called by external owners (VoiceConversationSession.stopSession, toggleVoiceInput).
+     */
     override fun stop() {
+        flushTtsEngine()
+        if (_state.value is TextToSpeechState.Speaking) {
+            _state.value = TextToSpeechState.Idle
+        }
+        dismissIslandIfSpeaking()
+    }
+
+    /**
+     * Silently interrupt the Android TTS engine without changing [_state].
+     * Used internally by [speak] to flush a previous utterance before starting a new one,
+     * avoiding a spurious Idle emission that would confuse VoiceConversationSession.
+     */
+    private fun flushTtsEngine() {
         try {
             if (tts?.isSpeaking == true) {
                 tts?.stop()
             }
         } catch (e: Exception) {
-            AppLogger.w(TAG, "Error stopping TextToSpeech: ${e.message}")
-        } finally {
-            if (_state.value is TextToSpeechState.Speaking) {
-                _state.value = TextToSpeechState.Idle
-            }
+            AppLogger.w(TAG, "flushTtsEngine error: ${e.message}")
+        }
+    }
+
+    private fun dismissIslandIfSpeaking() {
+        if (islandStateManager.displayState.value.state == AIOSIslandState.SPEAKING) {
+            islandStateManager.dismiss()
         }
     }
 
@@ -149,6 +191,7 @@ class TextToSpeechManager @Inject constructor(
             tts = null
             isInitialized = false
             _state.value = TextToSpeechState.Idle
+            dismissIslandIfSpeaking()
         }
     }
 
@@ -162,17 +205,20 @@ class TextToSpeechManager @Inject constructor(
             if (_state.value is TextToSpeechState.Speaking) {
                 _state.value = TextToSpeechState.Idle
             }
+            dismissIslandIfSpeaking()
         }
 
         @Deprecated("Deprecated in Java")
         override fun onError(utteranceId: String?) {
             AppLogger.w(TAG, "TTS onError: $utteranceId")
             _state.value = TextToSpeechState.Error("Speech playback interrupted")
+            dismissIslandIfSpeaking()
         }
 
         override fun onError(utteranceId: String?, errorCode: Int) {
             AppLogger.w(TAG, "TTS onError: $utteranceId code=$errorCode")
             _state.value = TextToSpeechState.Error("Speech error ($errorCode)")
+            dismissIslandIfSpeaking()
         }
     }
 

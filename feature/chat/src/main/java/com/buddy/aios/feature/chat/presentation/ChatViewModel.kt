@@ -50,7 +50,13 @@ class ChatViewModel @Inject constructor(
     val agentOrchestrator: AgentOrchestrator,
     val voiceInputManager: VoiceInputManager,
     val ttsManager: TextToSpeechManager,
+    private val voiceCommandParser: com.buddy.aios.core.ai.voice.VoiceCommandParser,
+    val voiceSession: com.buddy.aios.feature.chat.voice.VoiceConversationSession,
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "ChatViewModel"
+    }
 
     val conversationId: String = checkNotNull(savedStateHandle["conversationId"])
 
@@ -64,6 +70,8 @@ class ChatViewModel @Inject constructor(
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
     private val _streamingPartialText = MutableStateFlow<String?>(null)
+
+    val isContinuousVoiceActive: StateFlow<Boolean> = voiceSession.isContinuousModeActive
 
     val voiceInputState: StateFlow<VoiceInputState> = voiceInputManager.state
     val ttsState: StateFlow<TextToSpeechState> = ttsManager.state
@@ -94,14 +102,15 @@ class ChatViewModel @Inject constructor(
             }
             .launchIn(viewModelScope)
 
-        // Observe Agent Status and mirror into Dynamic Island
+        // Observe Agent Status and mirror into Dynamic Island (voice session active only)
         agentOrchestrator.agentStatus
             .onEach { status ->
+                if (voiceSession.sessionMode.value == com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF) return@onEach
                 when (status) {
                     AgentStatus.UNDERSTANDING -> islandStateManager.show(AIOSIslandState.THINKING, "Understanding...", autoDismissMs = 0L)
                     AgentStatus.PLANNING      -> islandStateManager.show(AIOSIslandState.THINKING, "Planning...", autoDismissMs = 0L)
-                    AgentStatus.EXECUTING     -> islandStateManager.show(AIOSIslandState.THINKING, "Working...", autoDismissMs = 0L)
-                    AgentStatus.VERIFYING     -> islandStateManager.show(AIOSIslandState.THINKING, "Checking...", autoDismissMs = 0L)
+                    AgentStatus.EXECUTING     -> islandStateManager.show(AIOSIslandState.TOOL_EXECUTION, "Working...", autoDismissMs = 0L)
+                    AgentStatus.VERIFYING     -> islandStateManager.show(AIOSIslandState.TOOL_EXECUTION, "Checking...", autoDismissMs = 0L)
                     AgentStatus.WAITING_CONFIRMATION -> islandStateManager.show(AIOSIslandState.ERROR, "Confirmation needed", autoDismissMs = 0L)
                     AgentStatus.COMPLETED     -> islandStateManager.show(AIOSIslandState.TASK_CREATED, "Done", autoDismissMs = 2500L)
                     AgentStatus.FAILED        -> islandStateManager.show(AIOSIslandState.ERROR, "Couldn't complete", autoDismissMs = 3000L)
@@ -111,48 +120,75 @@ class ChatViewModel @Inject constructor(
             }
             .launchIn(viewModelScope)
 
-        // Observe voice recognizer results
-        voiceInputManager.state
-            .onEach { state ->
-                when (state) {
-                    is VoiceInputState.PartialResult -> _inputText.value = state.text
-                    is VoiceInputState.FinalResult   -> {
-                        _inputText.value = state.text
+        // Observe voice session state and mode into Dynamic Island
+        viewModelScope.launch {
+            voiceSession.sessionState.collect { sessionState ->
+                val mode = voiceSession.sessionMode.value
+                if (mode == com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF && sessionState is com.buddy.aios.feature.chat.voice.VoiceSessionState.Idle) {
+                    return@collect
+                }
+                when (sessionState) {
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Listening -> {
+                        val state = if (mode == com.buddy.aios.feature.chat.voice.VoiceSessionMode.CONTINUOUS) {
+                            AIOSIslandState.CONTINUOUS
+                        } else {
+                            AIOSIslandState.LISTENING
+                        }
+                        val msg = if (mode == com.buddy.aios.feature.chat.voice.VoiceSessionMode.CONTINUOUS) {
+                            "● Conversation Mode"
+                        } else {
+                            "Listening..."
+                        }
+                        islandStateManager.show(state = state, message = msg, autoDismissMs = 0L)
+                    }
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Thinking -> {
+                        if (mode != com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF) {
+                            islandStateManager.show(state = AIOSIslandState.THINKING, message = "✦ Thinking...", autoDismissMs = 0L)
+                        }
+                    }
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Speaking -> {
+                        if (mode != com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF) {
+                            islandStateManager.show(state = AIOSIslandState.SPEAKING, message = "🔊 Speaking...", autoDismissMs = 0L)
+                        }
+                    }
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Processing -> {
+                        if (mode != com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF) {
+                            islandStateManager.show(state = AIOSIslandState.THINKING, message = "Processing...", autoDismissMs = 0L)
+                        }
+                        _inputText.value = sessionState.text
                         onSendMessage()
                     }
-                    is VoiceInputState.Error -> {
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Idle -> {
+                        val current = islandStateManager.displayState.value
+                        if (current.state == AIOSIslandState.LISTENING ||
+                            current.state == AIOSIslandState.SPEAKING ||
+                            current.state == AIOSIslandState.CONTINUOUS ||
+                            current.state == AIOSIslandState.THINKING
+                        ) {
+                            islandStateManager.show(state = AIOSIslandState.STOPPING, message = "Stopping...", autoDismissMs = 600L)
+                        }
+                    }
+                    is com.buddy.aios.feature.chat.voice.VoiceSessionState.Error -> {
                         _uiState.value = ChatUiState.Error(
                             message = "Voice input issue",
-                            secondaryMessage = state.message
+                            secondaryMessage = sessionState.message
                         )
                         islandStateManager.show(
                             state = AIOSIslandState.ERROR,
-                            message = "Voice input failed",
+                            message = "Voice issue",
                             autoDismissMs = 2500L,
                         )
                     }
                     else -> {}
                 }
             }
-            .launchIn(viewModelScope)
+        }
 
-        // Mirror TTS state into the Dynamic Island
-        ttsManager.state
-            .onEach { ttsState ->
-                when (ttsState) {
-                    is TextToSpeechState.Speaking -> islandStateManager.update(AIOSIslandState.SPEAKING)
-                    is TextToSpeechState.Idle     -> {
-                        val current = islandStateManager.displayState.value
-                        if (current.state == AIOSIslandState.SPEAKING) {
-                            islandStateManager.dismiss()
-                        }
-                    }
-                    is TextToSpeechState.Error    -> islandStateManager.show(
-                        state = AIOSIslandState.ERROR,
-                        message = "Speech error",
-                        autoDismissMs = 2000L,
-                    )
-                    else -> {}
+        // Observe partial voice recognizer results for UI text box preview
+        voiceInputManager.state
+            .onEach { state ->
+                if (state is VoiceInputState.PartialResult) {
+                    _inputText.value = state.text
                 }
             }
             .launchIn(viewModelScope)
@@ -164,26 +200,30 @@ class ChatViewModel @Inject constructor(
 
     fun toggleVoiceInput() {
         ttsManager.stop()
-
-        if (voiceInputState.value is VoiceInputState.Listening || voiceInputState.value is VoiceInputState.PartialResult) {
-            voiceInputManager.stopListening()
-            islandStateManager.dismiss()
-        } else {
-            voiceInputManager.startListening()
-            islandStateManager.show(
-                state = AIOSIslandState.LISTENING,
-                message = "Listening...",
-                autoDismissMs = 0L,
-            )
-        }
+        voiceSession.toggleVoiceSession(
+            onSpeechResult = { text ->
+                _inputText.value = text
+                onSendMessage()
+            },
+            onCommandDetected = { command ->
+                com.buddy.aios.core.common.logging.AppLogger.d(TAG, "Command detected: $command")
+            }
+        )
     }
 
     fun onSendMessage() {
         val content = _inputText.value.trim()
         if (content.isBlank() || _isStreaming.value) return
 
-        ttsManager.stop()
+        // Stop TTS only when the message originates from a text-typed user action, not from
+        // the voice pipeline. For voice sessions, VoiceConversationSession controls TTS lifecycle.
+        // Unconditionally stopping here was killing TTS mid-sentence on rapid interactions.
+        val isVoiceSessionActive = voiceSession.sessionMode.value != com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF
+        if (!isVoiceSessionActive) {
+            ttsManager.stop()
+        }
 
+        voiceSession.notifyThinking()
         _inputText.value = ""
         _isStreaming.value = true
         _streamingPartialText.value = ""
@@ -327,8 +367,8 @@ class ChatViewModel @Inject constructor(
             }
         }
 
-        // ── Voice (TTS) ────────────────────────────────────────────────────────
-        if (currentCapabilities.value.allowVoiceInputOutput) {
+        // ── Voice (TTS) — active voice session only ─────────────────────────────
+        if (voiceSession.sessionMode.value != com.buddy.aios.feature.chat.voice.VoiceSessionMode.OFF && currentCapabilities.value.allowVoiceInputOutput) {
             val composed = responseComposer.compose(
                 userMessage = userMessage,
                 fullResponse = fullResponse,
@@ -339,7 +379,7 @@ class ChatViewModel @Inject constructor(
             if (composed.voiceText.isNotBlank()) {
                 islandStateManager.show(
                     state = AIOSIslandState.SPEAKING,
-                    message = "Speaking...",
+                    message = "🔊 Speaking...",
                     autoDismissMs = 0L,
                 )
                 ttsManager.speak(composed.voiceText)
@@ -361,8 +401,6 @@ class ChatViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        voiceInputManager.stopListening()
-        ttsManager.stop()
-        islandStateManager.dismiss()
+        voiceSession.stopContinuousSession()
     }
 }

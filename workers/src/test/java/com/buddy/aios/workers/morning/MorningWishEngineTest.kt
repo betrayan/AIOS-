@@ -26,7 +26,6 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 import android.app.AlarmManager
-
 import android.content.SharedPreferences
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,14 +45,32 @@ class MorningWishEngineTest {
 
     private lateinit var morningWishEngine: MorningWishEngine
 
+    private val prefsMap = mutableMapOf<String, String>()
+
     @BeforeEach
     fun setUp() {
+        prefsMap.clear()
+        every { context.getPackageName() } returns "com.buddy.aios"
+        every { context.packageName } returns "com.buddy.aios"
         every { context.getSystemService(Context.ALARM_SERVICE) } returns alarmManager
+        every { context.getSystemService(Context.NOTIFICATION_SERVICE) } returns mockk<android.app.NotificationManager>(relaxed = true)
         every { context.getSharedPreferences(any(), any()) } returns sharedPreferences
         every { sharedPreferences.edit() } returns editor
-        every { editor.putString(any(), any()) } returns editor
+        every { editor.putString(any(), any()) } answers {
+            prefsMap[firstArg()] = secondArg()
+            editor
+        }
         every { editor.apply() } returns Unit
-        every { sharedPreferences.getString(any(), any()) } answers { secondArg() as String? }
+        every { sharedPreferences.getString(any(), any()) } answers {
+            prefsMap[firstArg()] ?: (secondArg() as String?)
+        }
+        every { settingsRepository.observeSettings() } returns kotlinx.coroutines.flow.MutableStateFlow(
+            MorningBriefingSettings(
+                isMorningWishEnabled = true,
+                morningWishHour = 6,
+                morningWishMinute = 0
+            )
+        )
         coEvery { settingsRepository.getSettings() } returns MorningBriefingSettings(
             isMorningWishEnabled = true,
             morningWishHour = 6,

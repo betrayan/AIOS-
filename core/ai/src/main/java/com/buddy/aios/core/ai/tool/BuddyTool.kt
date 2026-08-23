@@ -40,6 +40,13 @@ sealed interface BuddyTool {
     data class DeleteMemory(
         val content: String,
     ) : BuddyTool
+
+    /** Configure or update the daily Morning Wish alarm time. */
+    data class ConfigureMorningWish(
+        val hour: Int,
+        val minute: Int,
+        val isEnabled: Boolean = true,
+    ) : BuddyTool
 }
 
 /** Result of a [BuddyTool] execution. */

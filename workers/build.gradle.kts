@@ -5,6 +5,9 @@ plugins {
 
 android {
     namespace = "com.buddy.aios.workers"
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {

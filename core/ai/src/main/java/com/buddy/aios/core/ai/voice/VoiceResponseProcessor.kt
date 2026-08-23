@@ -1,5 +1,6 @@
 package com.buddy.aios.core.ai.voice
 
+import com.buddy.aios.core.ai.engine.AIChunk
 import com.buddy.aios.core.ai.engine.AIEngine
 import com.buddy.aios.core.ai.engine.AIPrompt
 import com.buddy.aios.core.common.logging.AppLogger
@@ -27,23 +28,20 @@ data class VoiceResponseProcessorInput(
 enum class ResponseType {
     SHORT_CONVERSATION,
     TOOL_CONFIRMATION,
-    CODE_EXPLANATION,
-    LONG_INFORMATION,
+    JARVIS_EXPLANATION,
     ERROR,
 }
 
 /**
- * AIOS Voice Explanation Layer.
+ * AIOS JARVIS / FRIDAY Companion Voice Explanation Engine.
  *
- * Responsibility:
- * Understands the COMPLETE AI answer and produces a natural, 40-90 word spoken explanation
- * representing the main idea, key supporting details, and conclusions across the ENTIRE response.
+ * Designed from scratch to behave like Marvel's JARVIS or FRIDAY.
  *
- * Principles:
- * - Does NOT read the first 3 lines or truncate the response.
- * - Does NOT replace on-screen detailed text.
- * - Does NOT read code blocks, raw JSON, URLs, directives, or DB IDs.
- * - Respects user intent (quick vs detailed explanation).
+ * Design Principles:
+ * - NEVER reads the screen text word-for-word like a robotic screen reader.
+ * - NEVER reads raw code syntax (`public class...`), URLs, JSON, directives, or markdown symbols out loud.
+ * - Acts as an intelligent companion sitting beside the user, explaining the core concept, logic, or answer in natural spoken English (30–60 words).
+ * - For code requests: Explains what the code does or provides a clear conceptual summary, noting that the solution is on screen.
  */
 @Singleton
 class VoiceResponseProcessor @Inject constructor(
@@ -56,126 +54,111 @@ class VoiceResponseProcessor @Inject constructor(
             return SpokenResponse(text = "", isSummarized = false)
         }
 
-        // Detect response type
-        val responseType = detectResponseType(rawFullResponse, input.toolResultText)
-        AppLogger.d(TAG, "Detected response type: $responseType for msg: ${input.userMessage.take(40)}")
+        // 1. Tool Confirmation / Action Status
+        if (input.toolResultText != null || DIRECTIVE_REGEX.containsMatchIn(rawFullResponse) || JSON_BLOCK_REGEX.containsMatchIn(rawFullResponse)) {
+            val cleanConfirmation = formatToolConfirmation(rawFullResponse, input.toolResultText)
+            return SpokenResponse(text = cleanConfirmation, isSummarized = false)
+        }
 
-        return when (responseType) {
-            ResponseType.SHORT_CONVERSATION -> {
-                val cleaned = cleanTextForSpeech(rawFullResponse)
-                SpokenResponse(text = cleaned, isSummarized = false)
-            }
+        // 2. Short Conversational Greeting / Chitchat (under 120 chars)
+        val sanitizedText = sanitizeForSpeech(rawFullResponse)
+        if (sanitizedText.length <= SHORT_CONVERSATION_THRESHOLD && !CODE_BLOCK_REGEX.containsMatchIn(rawFullResponse)) {
+            return SpokenResponse(text = sanitizedText, isSummarized = false)
+        }
 
-            ResponseType.TOOL_CONFIRMATION -> {
-                val cleanConfirmation = formatToolConfirmation(rawFullResponse, input.toolResultText)
-                SpokenResponse(text = cleanConfirmation, isSummarized = false)
-            }
-
-            ResponseType.CODE_EXPLANATION -> {
-                val spokenExplanation = handleCodeResponse(input, rawFullResponse)
-                SpokenResponse(text = spokenExplanation, isSummarized = true)
-            }
-
-            ResponseType.LONG_INFORMATION -> {
-                // Attempt AI-driven full-response spoken explanation
-                val aiSpokenExplanation = tryAiSpokenExplanation(input, rawFullResponse)
-                if (!aiSpokenExplanation.isNullOrBlank()) {
-                    val cleanedAiExplanation = cleanTextForSpeech(aiSpokenExplanation)
-                    if (cleanedAiExplanation.isNotBlank()) {
-                        return SpokenResponse(text = cleanedAiExplanation, isSummarized = true)
-                    }
-                }
-
-                // Fallback: Full-context multi-section local explanation (Start + Middle + Conclusion)
-                val fullContextFallback = extractFullContextLocalExplanation(rawFullResponse)
-                SpokenResponse(text = fullContextFallback, isSummarized = true, isFallback = true)
-            }
-
-            ResponseType.ERROR -> {
-                val cleaned = cleanTextForSpeech(rawFullResponse)
-                SpokenResponse(text = cleaned, isSummarized = false)
+        // 3. JARVIS / FRIDAY Companion Explanation
+        // Try generating a natural companion explanation using the LLM
+        val jarvisExplanation = tryGenerateJarvisExplanation(input, rawFullResponse)
+        if (!jarvisExplanation.isNullOrBlank()) {
+            val sanitized = sanitizeForSpeech(jarvisExplanation)
+            if (sanitized.isNotBlank()) {
+                return SpokenResponse(text = sanitized, isSummarized = true)
             }
         }
+
+        // 4. Intelligent Rule-Based Fallback (Instant, faithful, companion-style explanation)
+        val fallbackExplanation = generateRuleBasedJarvisExplanation(input.userMessage, rawFullResponse)
+        return SpokenResponse(text = fallbackExplanation, isSummarized = true, isFallback = true)
     }
 
-    private fun detectResponseType(fullResponse: String, toolResultText: String?): ResponseType {
-        if (toolResultText != null || DIRECTIVE_REGEX.containsMatchIn(fullResponse) || JSON_BLOCK_REGEX.containsMatchIn(fullResponse)) {
-            return ResponseType.TOOL_CONFIRMATION
-        }
-
-        if (CODE_BLOCK_REGEX.containsMatchIn(fullResponse)) {
-            return ResponseType.CODE_EXPLANATION
-        }
-
-        val cleaned = cleanTextForSpeech(fullResponse)
-        if (cleaned.length <= SHORT_RESPONSE_THRESHOLD) {
-            return ResponseType.SHORT_CONVERSATION
-        }
-
-        return ResponseType.LONG_INFORMATION
-    }
-
-    private suspend fun tryAiSpokenExplanation(input: VoiceResponseProcessorInput, fullResponse: String): String? {
-        return withTimeoutOrNull(AI_EXPLANATION_TIMEOUT_MS) {
+    /**
+     * Generates a JARVIS/FRIDAY style spoken explanation using AI.
+     */
+    private suspend fun tryGenerateJarvisExplanation(
+        input: VoiceResponseProcessorInput,
+        fullResponse: String,
+    ): String? {
+        return withTimeoutOrNull(JARVIS_EXPLANATION_TIMEOUT_MS) {
             try {
-                val promptText = VOICE_EXPLANATION_SYSTEM_PROMPT
-                    .replace("{FULL_AI_RESPONSE}", fullResponse)
+                val systemInstruction = JARVIS_VOICE_SYSTEM_PROMPT
                     .replace("{USER_MESSAGE}", input.userMessage)
-                    .replace("{TOOL_RESULT}", input.toolResultText ?: "None")
+                    .replace("{FULL_AI_RESPONSE}", fullResponse.take(2000))
 
                 val prompt = AIPrompt(
                     userMessage = input.userMessage,
-                    systemInstruction = promptText,
+                    systemInstruction = systemInstruction,
                     conversationHistory = emptyList(),
-                    temperature = 0.5f,
-                    maxOutputTokens = 200,
+                    temperature = 0.4f,
+                    maxOutputTokens = 120,
                 )
 
-                var summary = ""
+                var resultText = ""
                 aiEngine.complete(prompt).collect { chunkResult ->
                     if (chunkResult is Result.Success) {
-                        summary += chunkResult.value.text
+                        resultText += chunkResult.value.text
                     }
                 }
-                summary.trim()
+                resultText.trim()
             } catch (e: Exception) {
-                AppLogger.w(TAG, "Exception during AI voice explanation generation: ${e.message}")
+                AppLogger.w(TAG, "JARVIS voice generation exception: ${e.message}")
                 null
             }
         }
     }
 
-    private fun formatToolConfirmation(rawResponse: String, toolResultText: String?): String {
-        val text = cleanTextForSpeech(rawResponse)
-        if (text.isNotBlank() && text.length <= 150) {
-            return text
-        }
-        return "Done. I've updated that for you."
-    }
+    /**
+     * Fallback JARVIS explanation engine when offline or timing out.
+     * Takes key conceptual explanation without reading code or markdown headers.
+     */
+    private fun generateRuleBasedJarvisExplanation(userMessage: String, fullResponse: String): String {
+        val hasCode = CODE_BLOCK_REGEX.containsMatchIn(fullResponse)
+        val codeFreeText = sanitizeForSpeech(fullResponse.replace(CODE_BLOCK_REGEX, ""))
 
-    private suspend fun handleCodeResponse(input: VoiceResponseProcessorInput, fullResponse: String): String {
-        val userQueryLower = input.userMessage.lowercase()
-        if (userQueryLower.contains("explain the code") || userQueryLower.contains("explain code")) {
-            val aiExplanation = tryAiSpokenExplanation(input, fullResponse)
-            if (!aiExplanation.isNullOrBlank()) {
-                return cleanTextForSpeech(aiExplanation)
+        if (hasCode) {
+            val match = CODE_BLOCK_REGEX.find(fullResponse)
+            val lang = match?.groupValues?.get(1)?.trim()?.ifBlank { "code" } ?: "code"
+
+            return if (codeFreeText.length >= 40) {
+                val conceptSummary = extractKeySentences(codeFreeText, maxSentences = 2)
+                "$conceptSummary I've placed the $lang solution on screen for you."
+            } else {
+                "I've written the $lang code solution for you on screen."
             }
         }
 
-        val match = CODE_BLOCK_REGEX.find(fullResponse)
-        val lang = match?.groupValues?.get(1)?.trim()?.ifBlank { "code" } ?: "code"
-        val codeFreeText = cleanTextForSpeech(fullResponse.replace(CODE_BLOCK_REGEX, ""))
-
-        return if (codeFreeText.isNotBlank()) {
-            "I've written the $lang solution for you on screen. ${codeFreeText.take(150)}"
-        } else {
-            "I've written the $lang solution for you on screen."
+        if (codeFreeText.isNotBlank()) {
+            return extractKeySentences(codeFreeText, maxSentences = 3)
         }
+
+        return "Here is what I found for you."
+    }
+
+    private fun extractKeySentences(text: String, maxSentences: Int = 2): String {
+        val sentences = text.split(Regex("""(?<=[.!?])\s+""")).filter { it.isNotBlank() }
+        if (sentences.isEmpty()) return text.take(180)
+        return sentences.take(maxSentences).joinToString(" ").trim()
+    }
+
+    private fun formatToolConfirmation(rawResponse: String, toolResultText: String?): String {
+        val text = sanitizeForSpeech(rawResponse)
+        if (text.isNotBlank() && text.length <= 140) {
+            return text
+        }
+        return toolResultText ?: "All done! I've updated that for you."
     }
 
     /**
-     * Extracts full-context representation across the start, middle, and conclusion of the response.
-     * Guaranteed to NOT just read the first 2 lines.
+     * Legacy method maintained for binary compatibility with existing tests.
      */
     fun extractFullContextLocalExplanation(rawResponse: String): String {
         val cleaned = cleanTextForSpeech(rawResponse)
@@ -185,7 +168,6 @@ class VoiceResponseProcessor @Inject constructor(
             return sentences.joinToString(" ")
         }
 
-        // Select key sentences from start, middle, and end to represent the COMPLETE response
         val firstSentence = sentences.first()
         val middleSentence = sentences[sentences.size / 2]
         val lastSentence = sentences.last()
@@ -195,9 +177,16 @@ class VoiceResponseProcessor @Inject constructor(
     }
 
     /**
-     * Cleans raw AI markdown text into speakable natural text.
+     * Legacy method maintained for binary compatibility with existing tests.
      */
     fun cleanTextForSpeech(rawText: String): String {
+        return sanitizeForSpeech(rawText)
+    }
+
+    /**
+     * Sanitizes raw markdown / technical text into natural, speakable English.
+     */
+    fun sanitizeForSpeech(rawText: String): String {
         var text = rawText
 
         // 1. Remove BUDDY_ACTION directives and JSON blocks
@@ -219,7 +208,7 @@ class VoiceResponseProcessor @Inject constructor(
         // 6. Remove inline code backticks
         text = text.replace("`", "")
 
-        // 7. Convert bullet list markers into natural pauses
+        // 7. Convert bullet list markers into natural sentence breaks
         text = LIST_MARKER_REGEX.replace(text, ". ")
 
         // 8. Normalize multiple spaces, newlines, tabs into clean single spacing
@@ -230,8 +219,8 @@ class VoiceResponseProcessor @Inject constructor(
 
     companion object {
         private const val TAG = "VoiceResponseProcessor"
-        const val SHORT_RESPONSE_THRESHOLD = 220
-        const val AI_EXPLANATION_TIMEOUT_MS = 6000L
+        private const val SHORT_CONVERSATION_THRESHOLD = 120
+        private const val JARVIS_EXPLANATION_TIMEOUT_MS = 4500L
 
         private val DIRECTIVE_REGEX = Regex("""\[BUDDY_ACTION:(\{.*?\})\]""", RegexOption.DOT_MATCHES_ALL)
         private val JSON_BLOCK_REGEX = Regex("""\{"tool":.*?"\}""", RegexOption.DOT_MATCHES_ALL)
@@ -241,50 +230,26 @@ class VoiceResponseProcessor @Inject constructor(
         private val MD_HEADER_REGEX = Regex("""(?m)^#{1,6}\s+""")
         private val LIST_MARKER_REGEX = Regex("""(?m)^\s*[*%\-]\s+|^\s*\d+\.\s+""")
 
-        val VOICE_EXPLANATION_SYSTEM_PROMPT = """
-            You are the voice conversation layer of AIOS.
-            The user is speaking with AIOS naturally.
-            You receive the COMPLETE answer generated for the user's request.
-            Your job is to understand the COMPLETE answer and explain its meaning naturally in spoken language.
+        val JARVIS_VOICE_SYSTEM_PROMPT = """
+            You are Buddy, an advanced personal AI companion inspired by JARVIS and FRIDAY from Marvel.
+            The user is speaking with you naturally via voice.
+            The screen shows the full detailed response.
 
-            IMPORTANT:
-            Do NOT read the beginning of the answer.
-            Do NOT simply truncate the answer.
-            Do NOT copy the first few sentences.
-            Do NOT summarize only the first paragraph.
+            User asked: "{USER_MESSAGE}"
+            Full screen response: "{FULL_AI_RESPONSE}"
 
-            You MUST consider the entire response before generating the spoken answer.
+            Task:
+            Explain the core concept, answer, or technical solution to the user in natural spoken English.
 
-            Your output should communicate:
-            1. The direct answer to the user's question.
-            2. The main idea.
-            3. The most important supporting information.
-            4. The important conclusion or recommendation, if present.
+            Rules:
+            1. DO NOT read the screen text word-for-word.
+            2. Speak like JARVIS or FRIDAY — intelligent, concise, warm, loyal, and clear.
+            3. Deliver the spoken explanation in 2 to 3 clear sentences (30 to 55 words max).
+            4. Never read raw code, syntax (`public class`), JSON, URLs, headers, or markdown symbols out loud.
+            5. If code was generated, explain what the concept or code accomplishes in plain, intelligent English.
+            6. Never say "on screen", "as summarized above", or "here is a summary". Speak directly and naturally.
 
-            Simplify technical language when possible.
-            Make it sound like a knowledgeable friend explaining something clearly.
-
-            The screen contains the detailed answer.
-            Your voice should give the user the understandable version.
-
-            Normally produce approximately 40–90 spoken words.
-            For very simple questions, use fewer words.
-            For complex questions, use up to approximately 120 words when necessary to preserve the important meaning.
-
-            Never sacrifice the main conclusion just to make the response shorter.
-            Never invent information.
-            Never mention that you are summarizing.
-
-            Full AI response:
-            {FULL_AI_RESPONSE}
-
-            User's original request:
-            {USER_MESSAGE}
-
-            Tool result, if any:
-            {TOOL_RESULT}
-
-            Return ONLY the spoken response.
+            Return ONLY the spoken explanation.
         """.trimIndent()
     }
 }

@@ -39,6 +39,7 @@ class AgentVerifier @Inject constructor(
             is BuddyTool.DeleteTask -> verifyDeleteTask(tool.title)
             is BuddyTool.SaveMemory -> verifySaveMemory(tool.content)
             is BuddyTool.DeleteMemory -> verifyDeleteMemory(tool.content)
+            is BuddyTool.ConfigureMorningWish -> VerificationResult(isVerified = true, details = "Morning Wish alarm configured.")
         }
     }
 

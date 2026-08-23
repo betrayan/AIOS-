@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -200,29 +202,9 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .navigationBarsPadding()
+                .imePadding()
         ) {
-            // ── Dynamic Island Voice Capsule (Top Area) ─────────────────────
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                com.buddy.aios.feature.chat.presentation.components.DynamicIslandVoiceCapsule(
-                    sessionState = when {
-                        isListening -> VoiceSessionState.Listening
-                        isSpeaking -> VoiceSessionState.Speaking("AIOS Response")
-                        isStreaming -> VoiceSessionState.Thinking
-                        else -> VoiceSessionState.Idle
-                    },
-                    onCapsuleClick = {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            viewModel.toggleVoiceInput()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }
-                )
-            }
-
             // ── Messages List ──────────────────────────────────────────────────
             Box(modifier = Modifier.weight(1f)) {
                 when (val state = uiState) {
@@ -291,8 +273,6 @@ fun ChatScreen(
                 }
             }
 
-
-
             // ── Bottom Input Bar ───────────────────────────────────────────────
             GlassCard(
                 modifier = Modifier
@@ -308,18 +288,22 @@ fun ChatScreen(
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Voice Mic Toggle Button
-                    IconButton(onClick = {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                            viewModel.toggleVoiceInput()
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }) {
+                    // Primary Voice Microphone Control Button
+                    IconButton(
+                        onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                viewModel.toggleVoiceInput()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier.size(44.dp),
+                    ) {
                         Icon(
                             imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                             contentDescription = "Voice input",
                             tint = if (isListening) BuddyColors.Rose else BuddyColors.Cyan,
+                            modifier = Modifier.size(24.dp),
                         )
                     }
 

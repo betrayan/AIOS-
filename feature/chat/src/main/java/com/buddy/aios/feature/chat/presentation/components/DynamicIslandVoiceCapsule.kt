@@ -57,8 +57,8 @@ fun DynamicIslandVoiceCapsule(
 
     GlassCard(
         modifier = modifier
-            .width(200.dp)
-            .height(48.dp)
+            .width(340.dp)
+            .height(68.dp)
             .animateContentSize(
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -73,7 +73,7 @@ fun DynamicIslandVoiceCapsule(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -88,12 +88,12 @@ fun DynamicIslandVoiceCapsule(
 
             Box(
                 modifier = Modifier
-                    .size(8.dp)
+                    .size(12.dp)
                     .clip(CircleShape)
                     .background(dotColor)
             )
 
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
 
             // State Text & Waveform Morphing
             AnimatedContent(
@@ -104,28 +104,28 @@ fun DynamicIslandVoiceCapsule(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     when (state) {
                         is VoiceSessionState.Listening -> {
-                            Text("Listening...", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                            Spacer(Modifier.width(6.dp))
-                            VoiceWaveform(isActive = true, activeColor = BuddyColors.Rose, barCount = 6)
+                            Text("Listening...", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp), color = Color.White)
+                            Spacer(Modifier.width(10.dp))
+                            VoiceWaveform(isActive = true, activeColor = BuddyColors.Rose, barCount = 8)
                         }
                         is VoiceSessionState.Thinking, is VoiceSessionState.Processing -> {
-                            Text("✦ Thinking...", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = BuddyColors.Cyan)
+                            Text("✦ Thinking...", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp), color = BuddyColors.Cyan)
                         }
                         is VoiceSessionState.Speaking -> {
-                            Text("🔊 Speaking...", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                            Spacer(Modifier.width(6.dp))
-                            VoiceWaveform(isActive = true, activeColor = BuddyColors.PurpleLight, barCount = 6)
+                            Text("🔊 Speaking...", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp), color = Color.White)
+                            Spacer(Modifier.width(10.dp))
+                            VoiceWaveform(isActive = true, activeColor = BuddyColors.PurpleLight, barCount = 8)
                         }
                         is VoiceSessionState.WaitingForUser -> {
-                            Text("Waiting...", style = MaterialTheme.typography.labelMedium, color = BuddyColors.TextSecondary)
+                            Text("Waiting...", style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp), color = BuddyColors.TextSecondary)
                         }
                         is VoiceSessionState.Error -> {
-                            Text("Error", style = MaterialTheme.typography.labelMedium, color = BuddyColors.Rose)
+                            Text("Error", style = MaterialTheme.typography.titleMedium.copy(fontSize = 14.sp), color = BuddyColors.Rose)
                         }
                         else -> {
-                            Text("● AIOS Voice", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = Color.White)
-                            Spacer(Modifier.width(4.dp))
-                            Text("· Tap", style = MaterialTheme.typography.labelSmall, color = BuddyColors.TextMuted)
+                            Text("● AIOS Voice", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 14.sp), color = Color.White)
+                            Spacer(Modifier.width(6.dp))
+                            Text("· Tap", style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp), color = BuddyColors.TextMuted)
                         }
                     }
                 }

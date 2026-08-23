@@ -55,7 +55,14 @@ class ReminderEngine @Inject constructor(
         }
 
         val now = System.currentTimeMillis()
+
+        // ── Diagnostic: log raw incoming timestamp before any adjustment ──
+        AppLogger.d(TAG, "createReminder: raw triggerTimestamp=$triggerTimestamp now=$now delta=${(triggerTimestamp ?: 0L) - now}ms title='$rawTitle'")
+
         val computedTrigger = calculateValidTriggerTime(triggerTimestamp ?: (now + 3600 * 1000L), recurrenceRule)
+
+        // ── Diagnostic: log computed trigger and verify it is in the future ──
+        AppLogger.d(TAG, "createReminder: computedTrigger=$computedTrigger delta-from-now=${computedTrigger - now}ms")
 
         val taskId = UUID.randomUUID().toString()
         val deviceTimezone = TimeZone.getDefault().id
@@ -80,6 +87,9 @@ class ReminderEngine @Inject constructor(
             notificationEnabled = true,
             morningBriefingEligible = true,
         )
+
+        // ── Diagnostic: log unique alarm identity ──
+        AppLogger.d(TAG, "createReminder: taskId=$taskId notificationId=${task.notificationId} (unique PendingIntent requestCode)")
 
         // 1. Persist to Room Database
         taskDao.insert(task.toEntity())
@@ -231,6 +241,11 @@ class ReminderEngine @Inject constructor(
                     AppLogger.d(TAG, "Rescheduled next recurring occurrence for task id=$taskId at $nextTrigger")
                 }
             }
+        } else {
+            // ONE_TIME Reminder: When triggered & delivered, mark completed & archive out of active tasks!
+            taskDao.markCompleted(taskId, true)
+            taskDao.updateReminderSchedule(taskId, 0L, TaskStatus.COMPLETED.name, ReminderDeliveryState.DELIVERED.name)
+            AppLogger.d(TAG, "Triggered ONE_TIME reminder id=$taskId — marked completed and archived from active tasks")
         }
 
         return true

@@ -189,4 +189,143 @@ class ReminderEngineTest {
         coVerify(exactly = 1) { taskDao.markCompleted(taskId, true) }
         coVerify(exactly = 1) { scheduler.cancel(taskId, 555) }
     }
+
+    @Test
+    fun `Test 9 - One-time reminder trigger marks task completed and archives from active list`() = runTest {
+        val taskId = "t_onetime"
+        coEvery { taskDao.getById(taskId) } returns TaskEntity(
+            id = taskId,
+            title = "One-time test",
+            createdAt = System.currentTimeMillis(),
+            recurrenceRule = null,
+            isCompleted = false,
+        )
+
+        val handled = reminderEngine.handleReminderTriggered(taskId, 1001)
+
+        assertTrue(handled)
+        coVerify(exactly = 1) { taskDao.markCompleted(taskId, true) }
+        coVerify(exactly = 1) { taskDao.updateReminderSchedule(taskId, 0L, "COMPLETED", "DELIVERED") }
+    }
+
+    @Test
+    fun `Test 10 - Recurring reminder trigger reschedules next occurrence without completing task`() = runTest {
+        val taskId = "t_recurring"
+        coEvery { taskDao.getById(taskId) } returns TaskEntity(
+            id = taskId,
+            title = "Daily standup",
+            createdAt = System.currentTimeMillis(),
+            recurrenceRule = "DAILY",
+            isCompleted = false,
+        )
+
+        val handled = reminderEngine.handleReminderTriggered(taskId, 1002)
+
+        assertTrue(handled)
+        coVerify(exactly = 0) { taskDao.markCompleted(taskId, true) }
+        coVerify(exactly = 1) { taskDao.updateReminderSchedule(taskId, match { it > System.currentTimeMillis() }, "PENDING", "SCHEDULED") }
+    }
+
+    @Test
+    fun `Test 11 - Reminder in 2 minutes sets trigger approximately 120 seconds in the future`() = runTest {
+        val now = System.currentTimeMillis()
+        val twoMinutesMs = 2 * 60 * 1000L
+        val requestedTrigger = now + twoMinutesMs
+
+        coEvery { taskDao.getById(any()) } returns TaskEntity(
+            id = "t_2min",
+            title = "test reminder A",
+            createdAt = now,
+            reminderTime = requestedTrigger,
+        )
+
+        val result = reminderEngine.createReminder(
+            title = "test reminder A",
+            description = "",
+            triggerTimestamp = requestedTrigger,
+            recurrenceRule = null,
+            voiceEnabled = false,
+        )
+
+        assertTrue(result is ReminderEngineResult.Success)
+        val success = result as ReminderEngineResult.Success
+        // Must be strictly in the future (not rounded to the minute boundary)
+        assertTrue(success.task.reminderTime!! > now, "reminderTime must be in the future")
+        // Must be within ±5 seconds of the expected 2-minute offset
+        val diff = success.task.reminderTime!! - requestedTrigger
+        assertTrue(kotlin.math.abs(diff) < 5000L, "reminder should be ~2 minutes from now, diff=$diff ms")
+    }
+
+    @Test
+    fun `Test 12 - Reminder in 10 minutes sets trigger approximately 600 seconds in the future`() = runTest {
+        val now = System.currentTimeMillis()
+        val tenMinutesMs = 10 * 60 * 1000L
+        val requestedTrigger = now + tenMinutesMs
+
+        coEvery { taskDao.getById(any()) } returns TaskEntity(
+            id = "t_10min",
+            title = "test reminder B",
+            createdAt = now,
+            reminderTime = requestedTrigger,
+        )
+
+        val result = reminderEngine.createReminder(
+            title = "test reminder B",
+            description = "",
+            triggerTimestamp = requestedTrigger,
+            recurrenceRule = null,
+            voiceEnabled = false,
+        )
+
+        assertTrue(result is ReminderEngineResult.Success)
+        val success = result as ReminderEngineResult.Success
+        assertTrue(success.task.reminderTime!! > now, "reminderTime must be in the future")
+        val diff = success.task.reminderTime!! - requestedTrigger
+        assertTrue(kotlin.math.abs(diff) < 5000L, "reminder should be ~10 minutes from now, diff=$diff ms")
+    }
+
+    @Test
+    fun `Test 13 - Two separate reminders have distinct taskIds and distinct notificationIds`() = runTest {
+        val now = System.currentTimeMillis()
+        val triggerA = now + 2 * 60 * 1000L
+        val triggerB = now + 10 * 60 * 1000L
+
+        // Each call to createReminder generates a new UUID → different taskId → different notificationId (hashCode)
+        coEvery { taskDao.getById(any()) } answers {
+            val id = firstArg<String>()
+            TaskEntity(id = id, title = "reminder", createdAt = now, reminderTime = triggerA)
+        }
+
+        val resultA = reminderEngine.createReminder(
+            title = "test reminder A",
+            description = "",
+            triggerTimestamp = triggerA,
+            recurrenceRule = null,
+            voiceEnabled = false,
+        )
+        val resultB = reminderEngine.createReminder(
+            title = "test reminder B",
+            description = "",
+            triggerTimestamp = triggerB,
+            recurrenceRule = null,
+            voiceEnabled = false,
+        )
+
+        assertTrue(resultA is ReminderEngineResult.Success)
+        assertTrue(resultB is ReminderEngineResult.Success)
+
+        val taskA = (resultA as ReminderEngineResult.Success).task
+        val taskB = (resultB as ReminderEngineResult.Success).task
+
+        // Task IDs must be unique (UUID-based)
+        assertTrue(taskA.id != taskB.id, "Task IDs must differ: ${taskA.id} vs ${taskB.id}")
+
+        // Notification IDs must differ (so PendingIntent requestCodes differ → alarms are independent)
+        assertTrue(taskA.notificationId != taskB.notificationId,
+            "NotificationIds must differ: ${taskA.notificationId} vs ${taskB.notificationId}")
+
+        // Trigger times must be preserved separately
+        assertEquals(triggerA, taskA.reminderTime, "Reminder A trigger time must match")
+        assertEquals(triggerB, taskB.reminderTime, "Reminder B trigger time must match")
+    }
 }

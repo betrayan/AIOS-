@@ -1,9 +1,12 @@
 package com.buddy.aios.core.ai.tool
 
 import com.buddy.aios.core.common.logging.AppLogger
+import com.buddy.aios.core.common.time.NaturalLanguageTimeParser
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
@@ -65,7 +68,23 @@ object IntentParser {
                     val title = obj["title"]?.jsonPrimitive?.content?.trim() ?: ""
                     if (title.isBlank()) return null
                     val desc = obj["description"]?.jsonPrimitive?.content ?: ""
-                    val due = obj["dueTimestamp"]?.jsonPrimitive?.longOrNull?.takeIf { it > 0L }
+                    val rawDue = obj["dueTimestamp"]?.jsonPrimitive?.longOrNull?.takeIf { it > 0L }
+                    val now = System.currentTimeMillis()
+                    val due = when {
+                        rawDue == null -> NaturalLanguageTimeParser.parse(title, now).timestamp
+                        rawDue < 100_000_000_000L -> {
+                            val ms = rawDue * 1000L
+                            if (ms <= now - 60_000L) {
+                                NaturalLanguageTimeParser.parse(title, now).timestamp ?: ms
+                            } else {
+                                ms
+                            }
+                        }
+                        rawDue <= now - 60_000L -> {
+                            NaturalLanguageTimeParser.parse(title, now).timestamp ?: rawDue
+                        }
+                        else -> rawDue
+                    }
                     BuddyTool.CreateTask(
                         title = title,
                         description = desc,
@@ -98,6 +117,19 @@ object IntentParser {
                     val content = obj["content"]?.jsonPrimitive?.content?.trim() ?: ""
                     if (content.isBlank()) return null
                     BuddyTool.DeleteMemory(content = content)
+                }
+                else -> null
+            }
+            "MORNING_WISH" -> when (action) {
+                "SET", "CONFIGURE", "CREATE" -> {
+                    val hour = obj["hour"]?.jsonPrimitive?.intOrNull ?: 6
+                    val minute = obj["minute"]?.jsonPrimitive?.intOrNull ?: 0
+                    val enabled = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true
+                    BuddyTool.ConfigureMorningWish(
+                        hour = hour.coerceIn(0, 23),
+                        minute = minute.coerceIn(0, 59),
+                        isEnabled = enabled
+                    )
                 }
                 else -> null
             }

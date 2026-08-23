@@ -6,14 +6,23 @@ import com.buddy.aios.core.common.logging.AppLogger
 import com.buddy.aios.core.domain.repository.IBuddyModeRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+
+enum class VoiceSessionMode {
+    OFF,
+    ONE_SHOT,
+    CONTINUOUS,
+}
 
 sealed interface VoiceSessionState {
     data object Idle : VoiceSessionState
@@ -22,13 +31,13 @@ sealed interface VoiceSessionState {
     data object Thinking : VoiceSessionState
     data class Speaking(val text: String) : VoiceSessionState
     data object WaitingForUser : VoiceSessionState
+    data object Paused : VoiceSessionState
     data class Error(val message: String) : VoiceSessionState
 }
 
 /**
- * Continuous Voice Session Manager.
- * Orchestrates multi-turn continuous voice interaction without requiring the user
- * to repeatedly press the microphone button.
+ * Production-Ready Voice Session Manager supporting default ONE_SHOT voice
+ * and explicitly activated CONTINUOUS conversation mode.
  */
 @Singleton
 class VoiceConversationSession @Inject constructor(
@@ -40,18 +49,30 @@ class VoiceConversationSession @Inject constructor(
 ) {
     companion object {
         private const val TAG = "VoiceConversationSession"
+        private const val MAX_CONTINUOUS_ERRORS = 3
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    private val _sessionMode = MutableStateFlow(VoiceSessionMode.OFF)
+    val sessionMode: StateFlow<VoiceSessionMode> = _sessionMode.asStateFlow()
+
     private val _sessionState = MutableStateFlow<VoiceSessionState>(VoiceSessionState.Idle)
     val sessionState: StateFlow<VoiceSessionState> = _sessionState.asStateFlow()
 
-    private val _isContinuousModeActive = MutableStateFlow(false)
-    val isContinuousModeActive: StateFlow<Boolean> = _isContinuousModeActive.asStateFlow()
+    val isContinuousModeActive: StateFlow<Boolean> = _sessionMode
+        .map { it == VoiceSessionMode.CONTINUOUS }
+        .stateIn(
+            scope = scope,
+            started = kotlinx.coroutines.flow.SharingStarted.Eagerly,
+            initialValue = false
+        )
 
     private var onSpeechResultListener: ((String) -> Unit)? = null
     private var onCommandDetectedListener: ((VoiceCommand) -> Unit)? = null
+    private var autoListenJob: Job? = null
+    private var errorCount = 0
+    private var sessionToken = 0L
 
     init {
         // 1. Observe VoiceInputManager State
@@ -59,13 +80,14 @@ class VoiceConversationSession @Inject constructor(
             voiceInputManager.state.collect { inputState ->
                 when (inputState) {
                     is VoiceInputState.Listening -> {
-                        if (_isContinuousModeActive.value) {
+                        if (_sessionMode.value != VoiceSessionMode.OFF && _sessionState.value != VoiceSessionState.Paused) {
                             _sessionState.value = VoiceSessionState.Listening
                         }
                     }
                     is VoiceInputState.FinalResult -> {
+                        errorCount = 0
                         val text = inputState.text
-                        AppLogger.d(TAG, "Voice input received: $text")
+                        AppLogger.d(TAG, "Voice input received (mode=${_sessionMode.value}): $text")
 
                         val command = voiceCommandParser.parse(text)
                         if (command != null) {
@@ -75,16 +97,58 @@ class VoiceConversationSession @Inject constructor(
                             onSpeechResultListener?.invoke(text)
                         }
                     }
-                    is VoiceInputState.Error -> {
-                        if (_isContinuousModeActive.value) {
-                            AppLogger.w(TAG, "Voice input error in continuous mode: ${inputState.message}")
-                            _sessionState.value = VoiceSessionState.WaitingForUser
-                            delay(1000)
-                            if (_isContinuousModeActive.value && ttsManager.state.value !is TextToSpeechState.Speaking) {
-                                voiceInputManager.startListening()
+                    is VoiceInputState.SpeechTimeout -> {
+                        if (_sessionState.value is VoiceSessionState.Processing || _sessionState.value is VoiceSessionState.Speaking) {
+                            AppLogger.d(TAG, "Ignoring trailing SpeechTimeout while processing/speaking speech result")
+                            return@collect
+                        }
+                        when (_sessionMode.value) {
+                            VoiceSessionMode.CONTINUOUS -> {
+                                if (_sessionState.value != VoiceSessionState.Paused) {
+                                    if (ttsManager.state.value is TextToSpeechState.Speaking) {
+                                        AppLogger.d(TAG, "SpeechTimeout while TTS speaking -> Deferring auto-restart until TTS completes")
+                                    } else {
+                                        AppLogger.d(TAG, "Silence timeout in CONTINUOUS mode -> Quietly auto-restarting listening")
+                                        _sessionState.value = VoiceSessionState.WaitingForUser
+                                        scheduleAutoRestartListening(delayMs = 300L)
+                                    }
+                                }
                             }
-                        } else {
-                            _sessionState.value = VoiceSessionState.Error(inputState.message)
+                            VoiceSessionMode.ONE_SHOT -> {
+                                AppLogger.d(TAG, "Silence timeout in ONE_SHOT mode -> Finishing voice session")
+                                stopSession()
+                            }
+                            VoiceSessionMode.OFF -> {}
+                        }
+                    }
+                    is VoiceInputState.Error -> {
+                        if (_sessionState.value is VoiceSessionState.Processing || _sessionState.value is VoiceSessionState.Speaking) {
+                            AppLogger.d(TAG, "Ignoring trailing SpeechRecognizer error (${inputState.message}) while processing/speaking speech result")
+                            return@collect
+                        }
+                        when (_sessionMode.value) {
+                            VoiceSessionMode.CONTINUOUS -> {
+                                if (_sessionState.value != VoiceSessionState.Paused) {
+                                    if (ttsManager.state.value is TextToSpeechState.Speaking) {
+                                        AppLogger.d(TAG, "Voice input error while TTS speaking (${inputState.message}) -> Deferring auto-restart until TTS completes")
+                                    } else {
+                                        errorCount++
+                                        if (errorCount <= MAX_CONTINUOUS_ERRORS) {
+                                            AppLogger.w(TAG, "Voice input error in CONTINUOUS mode ($errorCount/$MAX_CONTINUOUS_ERRORS): ${inputState.message}")
+                                            _sessionState.value = VoiceSessionState.WaitingForUser
+                                            scheduleAutoRestartListening(delayMs = 600L)
+                                        } else {
+                                            AppLogger.w(TAG, "Max continuous voice errors reached ($errorCount). Stopping continuous mode.")
+                                            stopSession()
+                                        }
+                                    }
+                                }
+                            }
+                            VoiceSessionMode.ONE_SHOT -> {
+                                AppLogger.w(TAG, "Voice input error in ONE_SHOT mode: ${inputState.message}")
+                                stopSession()
+                            }
+                            VoiceSessionMode.OFF -> {}
                         }
                     }
                     else -> {}
@@ -92,21 +156,34 @@ class VoiceConversationSession @Inject constructor(
             }
         }
 
-        // 2. Observe TextToSpeechManager State (AUTO RETURN TO LISTENING WHEN TTS FINISHES)
+        // 2. Observe TextToSpeechManager State (BRANCHING LOGIC ON TTS COMPLETE)
         scope.launch {
             ttsManager.state.collect { ttsState ->
+                // Ignore background TTS (e.g. Reminders or Morning Wish) when voice session is OFF
+                if (_sessionMode.value == VoiceSessionMode.OFF) return@collect
+
                 when (ttsState) {
                     is TextToSpeechState.Speaking -> {
+                        AppLogger.d(TAG, "TTS: START")
                         _sessionState.value = VoiceSessionState.Speaking(ttsState.text)
                     }
                     is TextToSpeechState.Idle -> {
-                        if (_isContinuousModeActive.value && _sessionState.value is VoiceSessionState.Speaking) {
-                            AppLogger.d(TAG, "TTS finished speaking -> Auto-returning to LISTENING in continuous mode")
-                            _sessionState.value = VoiceSessionState.WaitingForUser
-                            delay(500) // Brief natural pause after TTS
-                            if (_isContinuousModeActive.value) {
-                                voiceInputManager.startListening()
+                        AppLogger.d(TAG, "TTS: COMPLETE")
+                        when (_sessionMode.value) {
+                            VoiceSessionMode.CONTINUOUS -> {
+                                if (_sessionState.value != VoiceSessionState.Paused) {
+                                    AppLogger.d(TAG, "TTS finished speaking in CONTINUOUS mode -> Auto-returning to LISTENING")
+                                    _sessionState.value = VoiceSessionState.WaitingForUser
+                                    scheduleAutoRestartListening(delayMs = 300L)
+                                }
                             }
+                            VoiceSessionMode.ONE_SHOT -> {
+                                if (_sessionState.value is VoiceSessionState.Speaking || _sessionState.value is VoiceSessionState.Processing) {
+                                    AppLogger.d(TAG, "TTS finished speaking in ONE_SHOT mode -> Finishing voice session")
+                                    stopSession()
+                                }
+                            }
+                            VoiceSessionMode.OFF -> {}
                         }
                     }
                     else -> {}
@@ -115,32 +192,131 @@ class VoiceConversationSession @Inject constructor(
         }
     }
 
-    fun startContinuousSession(onSpeechResult: (String) -> Unit, onCommandDetected: (VoiceCommand) -> Unit) {
-        onSpeechResultListener = onSpeechResult
-        onCommandDetectedListener = onCommandDetected
-        _isContinuousModeActive.value = true
-        AppLogger.d(TAG, "Started Continuous Voice Session")
+    fun startOneShotSession(
+        onSpeechResult: ((String) -> Unit)? = null,
+        onCommandDetected: ((VoiceCommand) -> Unit)? = null
+    ) {
+        if (onSpeechResult != null) onSpeechResultListener = onSpeechResult
+        if (onCommandDetected != null) onCommandDetectedListener = onCommandDetected
+
+        val previousMode = _sessionMode.value
+        if (previousMode == VoiceSessionMode.ONE_SHOT && _sessionState.value is VoiceSessionState.Listening) {
+            AppLogger.d(TAG, "One-shot session already active and listening")
+            return
+        }
+
+        autoListenJob?.cancel()
+        sessionToken++
+        errorCount = 0
+        _sessionMode.value = VoiceSessionMode.ONE_SHOT
+        _sessionState.value = VoiceSessionState.Listening
+
+        if (previousMode == VoiceSessionMode.OFF) {
+            voiceInputManager.playMicSound(isOn = true)
+            AppLogger.d(TAG, "VoiceSession: OFF → ONE_SHOT")
+        }
+
         voiceInputManager.startListening()
     }
 
-    fun stopContinuousSession() {
-        _isContinuousModeActive.value = false
-        voiceInputManager.stopListening()
-        ttsManager.stop()
-        _sessionState.value = VoiceSessionState.Idle
-        AppLogger.d(TAG, "Stopped Continuous Voice Session")
+    fun startContinuousSession(
+        onSpeechResult: ((String) -> Unit)? = null,
+        onCommandDetected: ((VoiceCommand) -> Unit)? = null
+    ) {
+        if (onSpeechResult != null) onSpeechResultListener = onSpeechResult
+        if (onCommandDetected != null) onCommandDetectedListener = onCommandDetected
+
+        val previousMode = _sessionMode.value
+        if (previousMode == VoiceSessionMode.CONTINUOUS && _sessionState.value is VoiceSessionState.Listening) {
+            AppLogger.d(TAG, "Continuous session already active and listening")
+            return
+        }
+
+        autoListenJob?.cancel()
+        sessionToken++
+        errorCount = 0
+        _sessionMode.value = VoiceSessionMode.CONTINUOUS
+        _sessionState.value = VoiceSessionState.Listening
+
+        if (previousMode == VoiceSessionMode.OFF) {
+            voiceInputManager.playMicSound(isOn = true)
+            AppLogger.d(TAG, "VoiceSession: OFF → CONTINUOUS")
+        } else {
+            AppLogger.d(TAG, "VoiceSession: ${previousMode.name} → CONTINUOUS")
+        }
+
+        voiceInputManager.startListening()
     }
 
-    fun toggleContinuousSession(onSpeechResult: (String) -> Unit, onCommandDetected: (VoiceCommand) -> Unit) {
-        if (_isContinuousModeActive.value) {
-            stopContinuousSession()
+    fun stopSession() {
+        autoListenJob?.cancel()
+        autoListenJob = null
+        sessionToken++
+
+        val previousMode = _sessionMode.value
+        if (previousMode == VoiceSessionMode.OFF) {
+            AppLogger.d(TAG, "VoiceSession: Already OFF")
+            return
+        }
+
+        _sessionMode.value = VoiceSessionMode.OFF
+        errorCount = 0
+
+        voiceInputManager.stopListening()
+        voiceInputManager.cancel()
+        ttsManager.stop()
+        _sessionState.value = VoiceSessionState.Idle
+
+        voiceInputManager.playMicSound(isOn = false)
+        AppLogger.d(TAG, "VoiceSession: ${previousMode.name} → OFF")
+    }
+
+    fun stopContinuousSession() {
+        stopSession()
+    }
+
+    fun pauseSession() {
+        autoListenJob?.cancel()
+        autoListenJob = null
+        if (_sessionMode.value != VoiceSessionMode.OFF) {
+            _sessionState.value = VoiceSessionState.Paused
+            voiceInputManager.stopListening()
+            AppLogger.d(TAG, "Paused Voice Session")
+        }
+    }
+
+    fun resumeSession() {
+        if (_sessionMode.value != VoiceSessionMode.OFF && _sessionState.value == VoiceSessionState.Paused) {
+            _sessionState.value = VoiceSessionState.Listening
+            AppLogger.d(TAG, "Resumed Voice Session from Pause")
+            voiceInputManager.startListening()
+        }
+    }
+
+    fun toggleVoiceSession(
+        onSpeechResult: ((String) -> Unit)? = null,
+        onCommandDetected: ((VoiceCommand) -> Unit)? = null
+    ) {
+        if (_sessionMode.value != VoiceSessionMode.OFF) {
+            stopSession()
+        } else {
+            startOneShotSession(onSpeechResult, onCommandDetected)
+        }
+    }
+
+    fun toggleContinuousSession(
+        onSpeechResult: ((String) -> Unit)? = null,
+        onCommandDetected: ((VoiceCommand) -> Unit)? = null
+    ) {
+        if (_sessionMode.value == VoiceSessionMode.CONTINUOUS) {
+            stopSession()
         } else {
             startContinuousSession(onSpeechResult, onCommandDetected)
         }
     }
 
     fun notifyThinking() {
-        if (_isContinuousModeActive.value) {
+        if (_sessionMode.value != VoiceSessionMode.OFF && _sessionState.value != VoiceSessionState.Paused) {
             _sessionState.value = VoiceSessionState.Thinking
         }
     }
@@ -149,21 +325,51 @@ class VoiceConversationSession @Inject constructor(
         ttsManager.speak(text)
     }
 
+    private fun scheduleAutoRestartListening(delayMs: Long) {
+        autoListenJob?.cancel()
+        val currentToken = sessionToken
+        if (_sessionMode.value != VoiceSessionMode.CONTINUOUS || _sessionState.value == VoiceSessionState.Paused) return
+
+        autoListenJob = scope.launch {
+            delay(delayMs)
+            if (sessionToken == currentToken &&
+                _sessionMode.value == VoiceSessionMode.CONTINUOUS &&
+                _sessionState.value != VoiceSessionState.Paused &&
+                ttsManager.state.value !is TextToSpeechState.Speaking
+            ) {
+                AppLogger.d(TAG, "Auto-restarting listening after delay=${delayMs}ms in CONTINUOUS mode")
+                _sessionState.value = VoiceSessionState.Listening
+                voiceInputManager.startListening()
+            } else if (ttsManager.state.value is TextToSpeechState.Speaking) {
+                AppLogger.d(TAG, "Auto-restart listening deferred: TTS is currently speaking")
+            }
+        }
+    }
+
     private fun handleVoiceCommand(command: VoiceCommand) {
         AppLogger.d(TAG, "Handling detected VoiceCommand: $command")
         onCommandDetectedListener?.invoke(command)
 
         when (command) {
             is VoiceCommand.StopListening -> {
-                speak("Okay, stopping continuous listening.")
-                stopContinuousSession()
+                speak("Okay, stopping voice mode.")
+                stopSession()
+            }
+            is VoiceCommand.PauseListening -> {
+                speak("Voice listening paused.")
+                pauseSession()
+            }
+            is VoiceCommand.ResumeListening -> {
+                speak("Resuming voice listening.")
+                resumeSession()
             }
             is VoiceCommand.SetVoiceMode -> {
                 if (command.enabled) {
-                    speak("Continuous voice mode is enabled.")
+                    startContinuousSession()
+                    speak("Continuous conversation mode enabled.")
                 } else {
-                    speak("Voice mode turned off.")
-                    stopContinuousSession()
+                    speak("Continuous mode turned off.")
+                    stopSession()
                 }
             }
             is VoiceCommand.SetBuddyModeCommand -> {
@@ -188,3 +394,4 @@ class VoiceConversationSession @Inject constructor(
         }
     }
 }
+

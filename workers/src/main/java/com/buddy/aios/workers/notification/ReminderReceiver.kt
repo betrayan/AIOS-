@@ -17,6 +17,8 @@ import com.buddy.aios.core.domain.repository.IBuddyModeRepository
 import com.buddy.aios.core.domain.repository.IReminderEngine
 import com.buddy.aios.core.domain.repository.IReminderScheduler
 import com.buddy.aios.core.common.voice.IVoiceOutputManager
+import com.buddy.aios.core.ui.island.AIOSIslandState
+import com.buddy.aios.core.ui.island.AIOSIslandStateManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +40,7 @@ class ReminderReceiver : BroadcastReceiver() {
         private const val TAG = "ReminderReceiver"
 
         const val ACTION_TRIGGER_REMINDER = "com.buddy.aios.ACTION_TRIGGER_REMINDER"
+        const val ACTION_SCHEDULE_TEST_REMINDER = "com.buddy.aios.ACTION_SCHEDULE_TEST_REMINDER"
         const val EXTRA_TASK_ID          = "extra_task_id"
         const val EXTRA_TASK_TITLE       = "extra_task_title"
         const val EXTRA_TASK_DESC        = "extra_task_desc"
@@ -63,8 +66,54 @@ class ReminderReceiver : BroadcastReceiver() {
     @Inject
     lateinit var ttsManager: IVoiceOutputManager
 
+    @Inject
+    lateinit var islandStateManager: AIOSIslandStateManager
+
     @SuppressLint("MissingPermission")
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == ACTION_SCHEDULE_TEST_REMINDER) {
+            val delaySecs = intent.getIntExtra("delay_seconds", 120)
+            val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: "test-task-${System.currentTimeMillis()}"
+            val title = intent.getStringExtra(EXTRA_TASK_TITLE) ?: "Test AIOS Live Reminder"
+            val now = System.currentTimeMillis()
+            val triggerTime = now + (delaySecs * 1000L)
+            val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, taskId.hashCode())
+
+            val task = TaskEntity(
+                id = taskId,
+                title = title,
+                description = "Testing exact AIOS reminder reliability",
+                isCompleted = false,
+                createdAt = now,
+                dueDate = triggerTime,
+                reminderTime = triggerTime,
+                priority = "MEDIUM",
+                tagsJson = "[]",
+                isReminder = true,
+                notificationId = notificationId,
+                timezone = "Asia/Kolkata",
+                status = "PENDING",
+                deliveryState = "SCHEDULED",
+                voiceEnabled = true,
+                notificationEnabled = true,
+                morningEligible = true,
+            )
+
+            val pendingResult = goAsync()
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    taskDao.insert(task)
+                    val scheduled = scheduler.schedule(task.toDomain())
+                    AppLogger.d(TAG, "Test reminder scheduled via broadcast: id=$taskId triggerTime=$triggerTime scheduled=$scheduled")
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "Failed to schedule test reminder", e)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
         if (intent.action != ACTION_TRIGGER_REMINDER) return
 
         val taskId = intent.getStringExtra(EXTRA_TASK_ID) ?: return
@@ -136,10 +185,19 @@ class ReminderReceiver : BroadcastReceiver() {
                     .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                     .setAutoCancel(true)
                     .setContentIntent(contentPendingIntent)
                     .addAction(android.R.drawable.checkbox_on_background, "DONE", donePendingIntent)
                     .addAction(android.R.drawable.ic_popup_sync, "SNOOZE (10m)", snoozePendingIntent)
+
+                withContext(Dispatchers.Main) {
+                    islandStateManager.show(
+                        state = AIOSIslandState.REMINDER,
+                        message = "🔔 ${task.title}",
+                        autoDismissMs = 4000L,
+                    )
+                }
 
                 if (notificationManager.hasNotificationPermission()) {
                     NotificationManagerCompat.from(context).notify(notificationId, builder.build())
@@ -151,15 +209,17 @@ class ReminderReceiver : BroadcastReceiver() {
                 // Voice Reminder Delivery (if enabled and BuddyMode allows)
                 val buddyMode = buddyModeRepository.getBuddyMode()
                 if (task.voiceEnabled && (buddyMode == BuddyMode.ACTIVE || buddyMode == BuddyMode.QUIET)) {
+                    val reminderTimestamp = task.reminderTime ?: task.dueDate ?: System.currentTimeMillis()
+                    val taskTz = task.timezone.ifBlank { TimeZone.getDefault().id }
                     val timeString = SimpleDateFormat("h:mm a", Locale.ENGLISH).apply {
-                        timeZone = TimeZone.getTimeZone(task.timezone)
-                    }.format(Date())
+                        timeZone = TimeZone.getTimeZone(taskTz)
+                    }.format(Date(reminderTimestamp))
 
-                    val voiceText = "Hey Buddy, it's $timeString. It's time to ${task.title}."
+                    val voiceText = "It is $timeString. Your reminder is due: ${task.title}."
                     withContext(Dispatchers.Main) {
                         ttsManager.speak(voiceText)
                     }
-                    AppLogger.d(TAG, "Spoken voice reminder triggered for task id=$taskId: '$voiceText'")
+                    AppLogger.d(TAG, "Spoken voice reminder triggered for task id=${task.id} (time=$timeString): '$voiceText'")
                 }
 
             } catch (e: Exception) {

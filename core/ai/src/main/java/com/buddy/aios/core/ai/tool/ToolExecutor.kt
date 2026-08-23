@@ -6,6 +6,8 @@ import com.buddy.aios.core.domain.repository.IMemoryRepository
 import com.buddy.aios.core.domain.repository.IReminderScheduler
 import com.buddy.aios.core.domain.repository.ITaskRepository
 import com.buddy.aios.core.domain.result.Result
+import com.buddy.aios.core.domain.repository.IMorningBriefingSettingsRepository
+import com.buddy.aios.core.domain.repository.IMorningWishEngine
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -18,6 +20,8 @@ class ToolExecutor @Inject constructor(
     private val taskRepository: ITaskRepository,
     private val memoryRepository: IMemoryRepository,
     private val reminderScheduler: IReminderScheduler,
+    private val morningSettingsRepository: IMorningBriefingSettingsRepository,
+    private val morningWishEngine: IMorningWishEngine,
 ) {
     companion object {
         private const val TAG = "ToolExecutor"
@@ -30,6 +34,7 @@ class ToolExecutor @Inject constructor(
             is BuddyTool.DeleteTask -> deleteTask(tool)
             is BuddyTool.SaveMemory -> saveMemory(tool)
             is BuddyTool.DeleteMemory -> deleteMemory(tool)
+            is BuddyTool.ConfigureMorningWish -> configureMorningWish(tool)
         }
     }
 
@@ -119,6 +124,32 @@ class ToolExecutor @Inject constructor(
         return when (val result = resultRepositoryDelete(memory.id)) {
             is Result.Success -> ToolResult.Success("I've forgotten that.")
             is Result.Error -> ToolResult.Failure("Could not remove that memory.")
+        }
+    }
+
+    private suspend fun configureMorningWish(tool: BuddyTool.ConfigureMorningWish): ToolResult {
+        return try {
+            val currentSettings = morningSettingsRepository.getSettings()
+            morningSettingsRepository.updateSettings(
+                currentSettings.copy(
+                    isMorningWishEnabled = tool.isEnabled,
+                    morningWishHour = tool.hour,
+                    morningWishMinute = tool.minute,
+                )
+            )
+            morningWishEngine.scheduleMorningWish()
+
+            val formattedTime = String.format(
+                Locale.ENGLISH, "%d:%02d %s",
+                if (tool.hour % 12 == 0) 12 else tool.hour % 12,
+                tool.minute,
+                if (tool.hour >= 12) "PM" else "AM"
+            )
+            AppLogger.d(TAG, "Morning Wish updated to $formattedTime (hour=${tool.hour}, minute=${tool.minute}, enabled=${tool.isEnabled})")
+            ToolResult.Success("Got it, Vijay! I've set your Morning Wish alarm for $formattedTime every morning.")
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Error updating Morning Wish settings", e)
+            ToolResult.Failure("Could not update Morning Wish settings.")
         }
     }
 

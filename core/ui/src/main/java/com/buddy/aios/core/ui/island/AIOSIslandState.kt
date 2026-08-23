@@ -20,11 +20,23 @@ enum class AIOSIslandState {
     /** AIOS is speaking a response via TTS. */
     SPEAKING,
 
+    /** AIOS is executing a tool (creating reminder, setting alarm, etc.). */
+    TOOL_EXECUTION,
+
     /** A task or reminder was successfully created. */
     TASK_CREATED,
 
     /** A time-sensitive reminder is firing. */
     REMINDER,
+
+    /** Morning Wish briefing is active. */
+    MORNING_WISH,
+
+    /** Multi-turn continuous conversation mode is active. */
+    CONTINUOUS,
+
+    /** Continuous conversation mode is stopping. */
+    STOPPING,
 
     /** A memory was saved to long-term memory. */
     MEMORY_SAVED,

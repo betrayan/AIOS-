@@ -1,3 +1,4 @@
+
 package com.buddy.aios.workers.morning
 
 import android.annotation.SuppressLint
@@ -21,17 +22,24 @@ import com.buddy.aios.core.ui.island.AIOSIslandState
 import com.buddy.aios.core.ui.island.AIOSIslandStateManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.SimpleDateFormat
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.launch
 
 /**
  * Master engine for AIOS Morning Wish interactive voice alarm.
  *
  * Responsibilities:
- * - Exact RTC_WAKEUP alarm scheduling in local timezone
+ * - Exact RTC_WAKEUP alarm scheduling in local timezone using ZonedDateTime
  * - Daily identity state machine (morning_wish_YYYY_MM_DD)
  * - Time-aware natural voice greetings & briefing delivery
  * - 10-minute repeat cycle until acknowledged
@@ -64,24 +72,53 @@ class MorningWishEngine @Inject constructor(
 
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                settingsRepository.observeSettings()
+                    .distinctUntilChangedBy { Triple(it.isMorningWishEnabled, it.morningWishHour, it.morningWishMinute) }
+                    .collect {
+                        scheduleMorningWish()
+                    }
+            } catch (e: Throwable) {
+                AppLogger.w(TAG, "Skipped observing settings flow: ${e.message}")
+            }
+        }
+    }
+
     override suspend fun scheduleMorningWish() {
         val settings = settingsRepository.getSettings()
         if (!settings.isMorningWishEnabled) {
-            AppLogger.d(TAG, "Morning Wish is disabled in settings")
+            AppLogger.d(TAG, "Morning Wish is disabled in settings — cancelling pending alarm")
+            cancelPendingMorningWishAlarm()
             return
         }
 
-        val nowCal = Calendar.getInstance()
-        val targetCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, settings.morningWishHour)
-            set(Calendar.MINUTE, settings.morningWishMinute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+        // ── Step 1: Log stored values exactly as read from SharedPreferences ──
+        AppLogger.d(TAG, "scheduleMorningWish: stored hour=${settings.morningWishHour} minute=${settings.morningWishMinute}")
+
+        val zoneId = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zoneId)
+
+        // ── Step 2: Construct target in device local timezone (no UTC conversion) ──
+        var target = now.withHour(settings.morningWishHour)
+            .withMinute(settings.morningWishMinute)
+            .withSecond(0)
+            .withNano(0)
+
+        AppLogger.d(TAG, "scheduleMorningWish: now=$now  raw-target=$target")
+
+        // ── Step 3: Roll to next day if target has already passed today ──
+        if (!target.isAfter(now)) {
+            target = target.plusDays(1)
+            AppLogger.d(TAG, "scheduleMorningWish: target passed — rolled to next day: $target")
         }
 
-        if (targetCal.before(nowCal)) {
-            targetCal.add(Calendar.DAY_OF_YEAR, 1)
-        }
+        val triggerAtMillis = target.toInstant().toEpochMilli()
+
+        // ── Step 4: Verify epoch corresponds to intended local time ──
+        val verifiedLocal = ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(triggerAtMillis), zoneId)
+        AppLogger.d(TAG, "scheduleMorningWish: EPOCH=$triggerAtMillis  verified-local-hour=${verifiedLocal.hour}  verified-local-minute=${verifiedLocal.minute}  zone=${zoneId.id}")
 
         val intent = Intent(context, MorningWishReceiver::class.java).apply {
             action = ACTION_MORNING_WISH_TRIGGER
@@ -96,13 +133,29 @@ class MorningWishEngine @Inject constructor(
         try {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
-                targetCal.timeInMillis,
+                triggerAtMillis,
                 pendingIntent
             )
-            val formatStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ENGLISH).format(targetCal.time)
-            AppLogger.d(TAG, "Scheduled exact Morning Wish alarm for $formatStr")
+            val formatStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", Locale.ENGLISH).format(target)
+            AppLogger.d(TAG, "scheduleMorningWish: SUCCESS — AlarmManager registered for $formatStr (millis=$triggerAtMillis)")
         } catch (e: SecurityException) {
             AppLogger.e(TAG, "Failed to schedule exact Morning Wish alarm due to permission", e)
+        }
+    }
+
+    private fun cancelPendingMorningWishAlarm() {
+        val intent = Intent(context, MorningWishReceiver::class.java).apply {
+            action = ACTION_MORNING_WISH_TRIGGER
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            1001,
+            intent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (pendingIntent != null) {
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
         }
     }
 
@@ -128,7 +181,7 @@ class MorningWishEngine @Inject constructor(
         saveStateForToday(MorningWishState.WAITING_FOR_ACK)
 
         val userName = (userRepository.getUserProfile() as? Result.Success)?.value?.name ?: "Vijay"
-        val greeting = getTimeAwareGreeting(userName)
+        val greeting = getTimeAwareGreeting(userName, settings.morningWishHour, settings.morningWishMinute)
 
         val briefingResult = morningBriefingEngine.generateAndDeliverMorningBriefing(forceDebug = isManualTrigger)
 
@@ -144,16 +197,21 @@ class MorningWishEngine @Inject constructor(
             }
         }
 
-        // 1. Speak summary via TTS
+        // 1. Instantly schedule tomorrow's Morning Wish alarm (locks in next day even if user ignores today's alarm)
+        if (!isRepeat && !isManualTrigger) {
+            scheduleMorningWish()
+        }
+
+        // 2. Post Morning Wish Notification FIRST (ensures notification appears regardless of TTS state)
+        deliverNotification(greeting, briefingResult.notificationBody)
+
+        // 3. Speak summary via TTS
         val buddyMode = buddyModeRepository.getBuddyMode()
         if (buddyMode != BuddyMode.OFF && buddyMode != BuddyMode.SILENT) {
             voiceOutputManager.speak(speechText)
         }
 
-        // 2. Post Morning Wish Notification
-        deliverNotification(greeting, briefingResult.notificationBody)
-
-        // 3. Update Dynamic Island Pill
+        // 4. Update Dynamic Island Pill
         islandStateManager.show(
             state = AIOSIslandState.REMINDER,
             message = "🌅 Morning Wish • Waiting for response",
@@ -162,8 +220,12 @@ class MorningWishEngine @Inject constructor(
             onAction = {}
         )
 
-        // 4. Schedule 10-minute repeat if not acknowledged
-        scheduleRepeatAlarm(repeatCount + 1)
+        // 5. Schedule 10-minute repeat (up to 3 times / 30 mins) if not acknowledged
+        if (repeatCount <= 3) {
+            scheduleRepeatAlarm(repeatCount + 1)
+        } else {
+            AppLogger.d(TAG, "Max Morning Wish repeats reached ($repeatCount) — stopping repeat alarms for today")
+        }
     }
 
     override suspend fun acknowledgeMorningWish(source: String) {
@@ -177,8 +239,12 @@ class MorningWishEngine @Inject constructor(
         voiceOutputManager.stop()
 
         // 3. Dismiss notification
-        val notificationManagerCompat = NotificationManagerCompat.from(context)
-        notificationManagerCompat.cancel(NOTIFICATION_ID)
+        try {
+            val notificationManagerCompat = NotificationManagerCompat.from(context)
+            notificationManagerCompat.cancel(NOTIFICATION_ID)
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Notification cancel skipped: ${e.message}")
+        }
 
         // 4. Update Dynamic Island
         islandStateManager.show(
@@ -219,14 +285,18 @@ class MorningWishEngine @Inject constructor(
         return SimpleDateFormat("yyyy_MM_dd", Locale.ENGLISH).format(Date())
     }
 
-    private fun getTimeAwareGreeting(userName: String): String {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-        return when (hour) {
-            in 5..11 -> "Good morning, $userName."
-            in 12..16 -> "Good afternoon, $userName."
-            in 17..20 -> "Good evening, $userName."
-            else -> "Good night, $userName."
+    private fun getTimeAwareGreeting(userName: String, scheduledHour: Int, scheduledMinute: Int): String {
+        val displayHour = if (scheduledHour % 12 == 0) 12 else scheduledHour % 12
+        val amPm = if (scheduledHour < 12) "AM" else "PM"
+        val timeFormatted = String.format(Locale.ENGLISH, "%d:%02d %s", displayHour, scheduledMinute, amPm)
+
+        val greetingPrefix = when (scheduledHour) {
+            in 5..11 -> "Good morning"
+            in 12..16 -> "Good afternoon"
+            in 17..20 -> "Good evening"
+            else -> "Good night"
         }
+        return "$greetingPrefix, $userName. It is $timeFormatted."
     }
 
     @SuppressLint("MissingPermission")
@@ -254,7 +324,7 @@ class MorningWishEngine @Inject constructor(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val publicNotification = NotificationCompat.Builder(context, AIOSNotificationManager.CHANNEL_REMINDER)
+            val publicNotification = NotificationCompat.Builder(context, AIOSNotificationManager.CHANNEL_MORNING)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("🌅 AIOS Morning Wish")
                 .setContentText("Good morning $userName. Your AIOS morning briefing is ready.")
@@ -263,7 +333,7 @@ class MorningWishEngine @Inject constructor(
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .build()
 
-            val builder = NotificationCompat.Builder(context, AIOSNotificationManager.CHANNEL_REMINDER)
+            val builder = NotificationCompat.Builder(context, AIOSNotificationManager.CHANNEL_MORNING)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("🌅 AIOS Morning Wish")
                 .setContentText("Good morning $userName. Your AIOS morning briefing is ready.")

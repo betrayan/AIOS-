@@ -42,6 +42,27 @@ class AIOSIslandStateManager @Inject constructor(
 
     private var autoDismissJob: Job? = null
 
+    private fun getPriority(state: AIOSIslandState): Int {
+        return when (state) {
+            AIOSIslandState.REMINDER,
+            AIOSIslandState.MORNING_WISH,
+            AIOSIslandState.TASK_CREATED,
+            AIOSIslandState.MEMORY_SAVED,
+            AIOSIslandState.ERROR -> 3
+
+            AIOSIslandState.CONTINUOUS,
+            AIOSIslandState.LISTENING,
+            AIOSIslandState.SPEAKING,
+            AIOSIslandState.THINKING,
+            AIOSIslandState.TOOL_EXECUTION -> 2
+
+            AIOSIslandState.STOPPING,
+            AIOSIslandState.AIOS_MESSAGE -> 1
+
+            AIOSIslandState.IDLE -> 0
+        }
+    }
+
     /**
      * Shows the Dynamic Island with the given [state] and [message].
      *
@@ -61,11 +82,18 @@ class AIOSIslandStateManager @Inject constructor(
         scope.launch {
             val buddyMode = buddyModeRepository.getBuddyMode()
             if (!shouldShow(state, buddyMode)) {
-                AppLogger.d(TAG, "Island suppressed: state=$state, buddyMode=$buddyMode")
+                AppLogger.d(TAG, "Island suppressed by BuddyMode: state=$state, buddyMode=$buddyMode")
+                return@launch
+            }
+
+            val current = _displayState.value
+            if (current.isVisible && getPriority(state) < getPriority(current.state)) {
+                AppLogger.d(TAG, "Island change rejected due to state priority: active=${current.state} (priority ${getPriority(current.state)}), attempted=$state (priority ${getPriority(state)})")
                 return@launch
             }
 
             cancelAutoDismiss()
+            AppLogger.d(TAG, "DynamicIsland: ${current.state} → $state ('$message')")
             _displayState.value = AIOSIslandDisplayState(
                 state = state,
                 message = message,
@@ -74,7 +102,6 @@ class AIOSIslandStateManager @Inject constructor(
                 actionLabel = actionLabel,
                 onAction = onAction,
             )
-            AppLogger.d(TAG, "Island shown: state=$state, message='$message'")
 
             if (autoDismissMs > 0L) {
                 scheduleAutoDismiss(autoDismissMs)
@@ -88,9 +115,9 @@ class AIOSIslandStateManager @Inject constructor(
      */
     fun update(state: AIOSIslandState) {
         val current = _displayState.value
-        if (current.isVisible) {
+        if (current.isVisible && getPriority(state) >= getPriority(current.state)) {
+            AppLogger.d(TAG, "DynamicIsland update: ${current.state} → $state")
             _displayState.value = current.copy(state = state)
-            AppLogger.d(TAG, "Island state updated: $state")
         }
     }
 
@@ -99,8 +126,11 @@ class AIOSIslandStateManager @Inject constructor(
      */
     fun dismiss() {
         cancelAutoDismiss()
+        val current = _displayState.value
+        if (current.isVisible) {
+            AppLogger.d(TAG, "DynamicIsland: ${current.state} → IDLE")
+        }
         _displayState.value = AIOSIslandDisplayState() // back to default hidden state
-        AppLogger.d(TAG, "Island dismissed")
     }
 
     // ── Private Helpers ───────────────────────────────────────────────────────

@@ -129,9 +129,11 @@ class ContextManager @Inject constructor() {
         }
 
         // Current date/time for temporal context
-        val dateStr = SimpleDateFormat("EEEE, MMMM d yyyy, h:mm a", Locale.ENGLISH)
-            .format(Date())
+        val nowMs = System.currentTimeMillis()
+        val dateStr = SimpleDateFormat("EEEE, MMMM d yyyy, h:mm a (z)", Locale.ENGLISH)
+            .format(Date(nowMs))
         appendLine("Current date and time: $dateStr")
+        appendLine("Current Unix timestamp (milliseconds): $nowMs")
         appendLine()
 
         // BuddyMode behavioral directive
@@ -183,10 +185,13 @@ class ContextManager @Inject constructor() {
 
         // Tool directive format
         appendLine("Action capabilities:")
-        appendLine("When you perform a concrete action (create task, save memory), append this EXACTLY at the end of your response — on a new line, nothing after it:")
-        appendLine("""[BUDDY_ACTION:{"tool":"TASK","action":"CREATE","title":"...","dueTimestamp":null}]""")
+        appendLine("When you perform a concrete action (create task, save memory, configure morning wish alarm), append this EXACTLY at the end of your response — on a new line, nothing after it:")
+        appendLine("""[BUDDY_ACTION:{"tool":"TASK","action":"CREATE","title":"...","dueTimestamp":$nowMs}]""")
+        appendLine("Note for dueTimestamp: Provide target date/time as a 13-digit Unix epoch timestamp in milliseconds (e.g., $nowMs). Calculate relative offsets from current epoch timestamp $nowMs.")
         appendLine("""[BUDDY_ACTION:{"tool":"MEMORY","action":"SAVE","content":"...","importance":0.8}]""")
         appendLine("""[BUDDY_ACTION:{"tool":"TASK","action":"COMPLETE","title":"..."}]""")
+        appendLine("""[BUDDY_ACTION:{"tool":"MORNING_WISH","action":"SET","hour":6,"minute":0,"enabled":true}]""")
+        appendLine("For configuring or changing the Morning Wish daily alarm time, ALWAYS use the MORNING_WISH tool (hour 0-23, minute 0-59). Do NOT create a TASK for Morning Wish.")
         appendLine("Only include [BUDDY_ACTION:...] when you are ACTUALLY performing the action. Never include it for regular conversation.")
     }
 
