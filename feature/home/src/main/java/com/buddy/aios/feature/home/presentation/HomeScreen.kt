@@ -209,6 +209,15 @@ fun HomeScreen(
                     eventCount = uiState.eventCount,
                     weatherTemp = uiState.weatherTemp,
                     weatherCondition = uiState.weatherCondition,
+                    onTasksClick = { showAddTaskDialog = true },
+                    onRemindersClick = {
+                        reminderTitle = ""
+                        reminderStep = 0
+                        reminderSelectedDateMs = System.currentTimeMillis()
+                        reminderHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                        reminderMinute = Calendar.getInstance().get(Calendar.MINUTE)
+                        showAddReminderDialog = true
+                    },
                 )
             }
 
@@ -672,6 +681,8 @@ private fun TodayAtAGlanceSection(
     eventCount: Int,
     weatherTemp: String,
     weatherCondition: String,
+    onTasksClick: () -> Unit = {},
+    onRemindersClick: () -> Unit = {},
 ) {
     Column {
         Text(
@@ -692,6 +703,7 @@ private fun TodayAtAGlanceSection(
                     valueText = "$activeTasksCount",
                     titleText = "Tasks",
                     subtitleText = "$completedTasksCount completed",
+                    onClick = onTasksClick,
                 )
             }
             item {
@@ -701,6 +713,7 @@ private fun TodayAtAGlanceSection(
                     valueText = "$reminderCount",
                     titleText = "Reminders",
                     subtitleText = "Upcoming today",
+                    onClick = onRemindersClick,
                 )
             }
             item {
@@ -732,9 +745,15 @@ private fun GlanceCard(
     valueText: String,
     titleText: String,
     subtitleText: String,
+    onClick: (() -> Unit)? = null,
 ) {
     GlassCard(
-        modifier = Modifier.width(115.dp),
+        modifier = Modifier
+            .width(115.dp)
+            .then(
+                if (onClick != null) Modifier.clickableWithScale(onClick = onClick)
+                else Modifier
+            ),
         shape = RoundedCornerShape(18.dp),
         backgroundColor = BuddyColors.SurfaceDark.copy(alpha = 0.85f),
     ) {
