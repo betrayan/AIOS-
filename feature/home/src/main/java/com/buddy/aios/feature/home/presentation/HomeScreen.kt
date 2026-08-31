@@ -49,6 +49,9 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,9 +60,14 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -103,6 +111,7 @@ import java.util.Locale
  * 6. Recent Activity: Task history list.
  * 7. Bottom Navigation: Floating glass nav bar (Home, Chat, Settings).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToChat: (String) -> Unit,
@@ -114,9 +123,20 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // ── Add Task dialog state ─────────────────────────────────────────────────
     var showAddTaskDialog by remember { mutableStateOf(false) }
-    var showVoiceRecordDialog by remember { mutableStateOf(false) }
     var newTaskTitle by remember { mutableStateOf("") }
+
+    // ── Add Reminder multi-step dialog state ──────────────────────────────────
+    var showAddReminderDialog by remember { mutableStateOf(false) }
+    // Step 0 = title entry, Step 1 = date picker, Step 2 = time picker
+    var reminderStep by remember { mutableStateOf(0) }
+    var reminderTitle by remember { mutableStateOf("") }
+    var reminderSelectedDateMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    var reminderHour by remember { mutableStateOf(Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) }
+    var reminderMinute by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MINUTE)) }
+
+    var showVoiceRecordDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf("home") }
 
     // Recording simulation state for quick action dialog
@@ -212,7 +232,14 @@ fun HomeScreen(
                         }
                     },
                     onAddTaskClick = { showAddTaskDialog = true },
-                    onAddReminderClick = { showAddTaskDialog = true },
+                    onAddReminderClick = {
+                        reminderTitle = ""
+                        reminderStep = 0
+                        reminderSelectedDateMs = System.currentTimeMillis()
+                        reminderHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+                        reminderMinute = Calendar.getInstance().get(Calendar.MINUTE)
+                        showAddReminderDialog = true
+                    },
                     onAskAIOSClick = { viewModel.onNewConversation { convId -> onNavigateToChat(convId) } }
                 )
             }
@@ -286,19 +313,27 @@ fun HomeScreen(
         if (showAddTaskDialog) {
             AlertDialog(
                 onDismissRequest = { showAddTaskDialog = false },
-                title = { Text("Add Task / Reminder", color = Color.White) },
+                title = { Text("Add Task", color = Color.White) },
                 text = {
-                    OutlinedTextField(
-                        value = newTaskTitle,
-                        onValueChange = { newTaskTitle = it },
-                        placeholder = { Text("e.g., Study Java at 7 PM") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BuddyColors.Cyan,
-                            unfocusedBorderColor = BuddyColors.GlassBorder,
-                            focusedTextColor = Color.White,
-                        ),
-                        singleLine = true,
-                    )
+                    Column {
+                        Text(
+                            text = "You can include a time to auto-schedule it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BuddyColors.TextMuted,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        OutlinedTextField(
+                            value = newTaskTitle,
+                            onValueChange = { newTaskTitle = it },
+                            placeholder = { Text("e.g., Study Java at 7 PM") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BuddyColors.Cyan,
+                                unfocusedBorderColor = BuddyColors.GlassBorder,
+                                focusedTextColor = Color.White,
+                            ),
+                            singleLine = true,
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(onClick = {
@@ -315,6 +350,217 @@ fun HomeScreen(
                     }
                 },
                 containerColor = BuddyColors.SurfaceDark,
+            )
+        }
+
+        // ── ADD REMINDER DIALOG (multi-step: title → date → time) ─────────────
+        if (showAddReminderDialog) {
+            AddReminderDialog(
+                step = reminderStep,
+                title = reminderTitle,
+                selectedDateMs = reminderSelectedDateMs,
+                hour = reminderHour,
+                minute = reminderMinute,
+                onTitleChange = { reminderTitle = it },
+                onDateSelected = { ms ->
+                    reminderSelectedDateMs = ms
+                    reminderStep = 2 // advance to time picker
+                },
+                onHourChange = { reminderHour = it },
+                onMinuteChange = { reminderMinute = it },
+                onNextStep = { reminderStep++ },
+                onDismiss = { showAddReminderDialog = false },
+                onConfirm = {
+                    // Combine date + time into epoch millis using device timezone
+                    val cal = Calendar.getInstance().apply {
+                        timeInMillis = reminderSelectedDateMs
+                        set(Calendar.HOUR_OF_DAY, reminderHour)
+                        set(Calendar.MINUTE, reminderMinute)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    val epochMs = cal.timeInMillis
+                    if (epochMs > System.currentTimeMillis()) {
+                        viewModel.onCreateReminder(
+                            title = reminderTitle,
+                            reminderTimeMs = epochMs,
+                        )
+                        val formatted = SimpleDateFormat("EEE, MMM d 'at' h:mm a", Locale.ENGLISH).format(Date(epochMs))
+                        Toast.makeText(context, "Reminder set for $formatted", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "Please pick a future date and time", Toast.LENGTH_SHORT).show()
+                        return@AddReminderDialog
+                    }
+                    reminderTitle = ""
+                    showAddReminderDialog = false
+                },
+            )
+        }
+    }
+}
+
+// ── ADD REMINDER DIALOG ────────────────────────────────────────────────────────
+
+/**
+ * Multi-step Add Reminder dialog.
+ *
+ * Step 0: User enters reminder title.
+ * Step 1: User picks a date (M3 DatePickerDialog).
+ * Step 2: User picks a time (M3 TimePicker wheel).
+ *
+ * On confirm, [onConfirm] is called. The caller is responsible for combining
+ * [selectedDateMs] + [hour]/[minute] into a final epoch millis and saving.
+ */
+@androidx.compose.runtime.Composable
+@androidx.compose.material3.ExperimentalMaterial3Api
+private fun AddReminderDialog(
+    step: Int,
+    title: String,
+    selectedDateMs: Long,
+    hour: Int,
+    minute: Int,
+    onTitleChange: (String) -> Unit,
+    onDateSelected: (Long) -> Unit,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit,
+    onNextStep: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    when (step) {
+        // ── Step 0: Title ────────────────────────────────────────────────────
+        0 -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                containerColor = BuddyColors.SurfaceDark,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Alarm,
+                            contentDescription = null,
+                            tint = BuddyColors.Cyan,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Add Reminder", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            "What do you want to be reminded about?",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BuddyColors.TextMuted,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = onTitleChange,
+                            placeholder = { Text("e.g., Chennai interview") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BuddyColors.Cyan,
+                                unfocusedBorderColor = BuddyColors.GlassBorder,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { if (title.isNotBlank()) onNextStep() },
+                        enabled = title.isNotBlank(),
+                    ) {
+                        Text("Next: Pick Date", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = BuddyColors.TextMuted)
+                    }
+                },
+            )
+        }
+
+        // ── Step 1: Date Picker ──────────────────────────────────────────────
+        1 -> {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = selectedDateMs,
+            )
+            DatePickerDialog(
+                onDismissRequest = onDismiss,
+                confirmButton = {
+                    TextButton(onClick = {
+                        val picked = datePickerState.selectedDateMillis ?: selectedDateMs
+                        onDateSelected(picked)
+                    }) {
+                        Text("Next: Pick Time", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = BuddyColors.TextMuted)
+                    }
+                },
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        // ── Step 2: Time Picker ──────────────────────────────────────────────
+        else -> {
+            val timePickerState = rememberTimePickerState(
+                initialHour = hour,
+                initialMinute = minute,
+                is24Hour = false,
+            )
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                containerColor = BuddyColors.SurfaceDark,
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = null,
+                            tint = BuddyColors.Cyan,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Set Time", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMs }
+                        val dateLabel = SimpleDateFormat("EEE, MMM d", Locale.ENGLISH).format(cal.time)
+                        Text(
+                            "\"$title\" on $dateLabel",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BuddyColors.TextMuted,
+                            modifier = Modifier.padding(bottom = 16.dp),
+                        )
+                        TimePicker(state = timePickerState)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onHourChange(timePickerState.hour)
+                        onMinuteChange(timePickerState.minute)
+                        onConfirm()
+                    }) {
+                        Text("Set Reminder", color = BuddyColors.Cyan, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = BuddyColors.TextMuted)
+                    }
+                },
             )
         }
     }

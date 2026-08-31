@@ -81,7 +81,7 @@ class MorningWishEngineTest {
         coEvery { morningBriefingEngine.generateAndDeliverMorningBriefing(any()) } returns MorningBriefingResult(
             title = "Morning Briefing",
             notificationBody = "2 tasks today",
-            voiceBriefing = "You have 2 tasks today.",
+            voiceBriefing = "Good morning Vijay. You have 2 tasks today.",
             priorityTasks = emptyList(),
             estimatedSleepFormatted = "7 hrs",
             isMorningWindowActive = true
@@ -137,5 +137,22 @@ class MorningWishEngineTest {
 
         coVerify(exactly = 1) { morningBriefingEngine.generateAndDeliverMorningBriefing(forceDebug = true) }
         assertTrue(morningWishEngine.isWaitingForAcknowledgement())
+    }
+
+    @Test
+    fun `Test 5 - Silence Morning Wish stops speech and updates state to DISMISSED`() = runTest {
+        morningWishEngine.triggerMorningWish(isManualTrigger = true)
+        morningWishEngine.acknowledgeMorningWish(source = "notification_silence")
+
+        verify(exactly = 1) { voiceOutputManager.stop() }
+        assertEquals(MorningWishState.DISMISSED, morningWishEngine.getTodayState())
+        assertFalse(morningWishEngine.isWaitingForAcknowledgement())
+    }
+
+    @Test
+    fun `Test 6 - Repeat trigger speaks friendly speech with current time`() = runTest {
+        morningWishEngine.triggerMorningWish(isManualTrigger = false, isRepeat = true, repeatCount = 1)
+
+        verify(exactly = 1) { voiceOutputManager.speak(match { it.contains("still waiting") }) }
     }
 }

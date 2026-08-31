@@ -59,7 +59,10 @@ class MorningBriefingEngine @Inject constructor(
         private const val KEY_LAST_BRIEFING_DATE = "last_morning_briefing_date"
     }
 
-    suspend fun generateAndDeliverMorningBriefing(forceDebug: Boolean = false): MorningBriefingResult {
+    suspend fun generateAndDeliverMorningBriefing(
+        forceDebug: Boolean = false,
+        suppressNotification: Boolean = false,
+    ): MorningBriefingResult {
         val nowCal = Calendar.getInstance()
         val hour = nowCal.get(Calendar.HOUR_OF_DAY)
         val isMorningWindow = forceDebug || hour in 5..10
@@ -112,10 +115,13 @@ class MorningBriefingEngine @Inject constructor(
             briefing = briefing,
         )
 
-        // Deliver Notification if BuddyMode permits and not already delivered
-        if (lastDeliveredDate != todayDateStr || forceDebug) {
+        // Deliver Notification only if BuddyMode permits, not already delivered, and not suppressed
+        // (MorningWishEngine delivers its own richer notification — pass suppressNotification=true from there)
+        if (!suppressNotification && (lastDeliveredDate != todayDateStr || forceDebug)) {
             deliverMorningNotification(todayDateStr, briefing.notificationTitle, briefing.notificationBody)
             prefs.edit().putString(KEY_LAST_BRIEFING_DATE, todayDateStr).apply()
+        } else if (!suppressNotification) {
+            AppLogger.d(TAG, "Morning notification already delivered today ($todayDateStr) — skipping")
         }
 
         AppLogger.d(TAG, "Delivered Morning Briefing for $todayDateStr")

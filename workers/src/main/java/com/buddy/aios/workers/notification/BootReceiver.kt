@@ -31,18 +31,23 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action
-        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        val isSupportedAction = action == Intent.ACTION_BOOT_COMPLETED ||
+            action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            action == Intent.ACTION_TIME_CHANGED ||
+            action == Intent.ACTION_TIMEZONE_CHANGED
 
-        AppLogger.d(TAG, "Device boot / package update completed — restoring pending reminder & morning wish alarms")
+        if (!isSupportedAction) return
+
+        AppLogger.d(TAG, "System state event received ($action) — restoring pending reminder & morning wish alarms")
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val restoredCount = reminderEngine.restoreReminders()
                 morningWishEngine.scheduleMorningWish()
-                AppLogger.d(TAG, "Restored $restoredCount reminder(s) and scheduled Morning Wish after reboot/update")
+                AppLogger.d(TAG, "Restored $restoredCount reminder(s) and scheduled Morning Wish after system event: $action")
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Failed to reschedule reminders after boot", e)
+                AppLogger.e(TAG, "Failed to reschedule reminders after system event $action", e)
             } finally {
                 pendingResult.finish()
             }

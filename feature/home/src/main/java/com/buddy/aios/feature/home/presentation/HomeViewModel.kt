@@ -3,11 +3,13 @@ package com.buddy.aios.feature.home.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.buddy.aios.core.ai.morning.MorningContextEngine
+import com.buddy.aios.core.common.time.NaturalLanguageTimeParser
 import com.buddy.aios.core.domain.entity.BuddyMode
 import com.buddy.aios.core.domain.entity.Task
 import com.buddy.aios.core.domain.entity.TaskPriority
 import com.buddy.aios.core.domain.repository.IBuddyModeRepository
 import com.buddy.aios.core.domain.repository.IMemoryRepository
+import com.buddy.aios.core.domain.repository.IReminderEngine
 import com.buddy.aios.core.domain.repository.ITaskRepository
 import com.buddy.aios.core.domain.repository.IUserRepository
 import com.buddy.aios.core.domain.result.Result
@@ -35,6 +37,7 @@ class HomeViewModel @Inject constructor(
     private val userRepository: IUserRepository,
     private val morningContextEngine: MorningContextEngine,
     private val priorityEngine: com.buddy.aios.core.ai.brain.PriorityEngine,
+    private val reminderEngine: IReminderEngine,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -112,16 +115,53 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Creates a reminder with a specific date+time from the Add Reminder UI.
+     * Routes through [IReminderEngine] which sets all reminder fields correctly:
+     * voiceEnabled=true, isReminder=true, timezone=device, notificationId=uuid.hashCode().
+     */
+    fun onCreateReminder(title: String, description: String = "", reminderTimeMs: Long) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            reminderEngine.createReminder(
+                title = title.trim(),
+                description = description.trim(),
+                triggerTimestamp = reminderTimeMs,
+                voiceEnabled = true,
+            )
+        }
+    }
+
+    /**
+     * Creates a quick task from a text title.
+     * If the title contains a time expression ("at 7 PM", "in 30 minutes", etc.),
+     * routes through [IReminderEngine] to schedule an exact alarm.
+     * Otherwise creates a plain task with no alarm.
+     */
     fun onCreateQuickTask(title: String) {
         if (title.isBlank()) return
         viewModelScope.launch {
-            val task = Task(
-                id = UUID.randomUUID().toString(),
-                title = title.trim(),
-                createdAt = System.currentTimeMillis(),
-                priority = TaskPriority.MEDIUM,
-            )
-            taskRepository.saveTask(task)
+            val now = System.currentTimeMillis()
+            val parsed = NaturalLanguageTimeParser.parse(title.trim(), now)
+            val parsedTime = parsed.timestamp // local val enables smart cast across module boundary
+            if (parsedTime != null && parsedTime > now) {
+                // Natural language time found — create a proper scheduled reminder
+                reminderEngine.createReminder(
+                    title = title.trim(),
+                    description = "",
+                    triggerTimestamp = parsedTime,
+                    voiceEnabled = true,
+                )
+            } else {
+                // No time found — create a plain unscheduled task
+                val task = Task(
+                    id = UUID.randomUUID().toString(),
+                    title = title.trim(),
+                    createdAt = now,
+                    priority = TaskPriority.MEDIUM,
+                )
+                taskRepository.saveTask(task)
+            }
         }
     }
 }

@@ -132,7 +132,7 @@ class VoiceResponseProcessor @Inject constructor(
                 val conceptSummary = extractKeySentences(codeFreeText, maxSentences = 2)
                 "$conceptSummary I've placed the $lang solution on screen for you."
             } else {
-                "I've written the $lang code solution for you on screen."
+                "I've written the $lang solution for you on screen."
             }
         }
 

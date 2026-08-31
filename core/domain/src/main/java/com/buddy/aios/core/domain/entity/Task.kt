@@ -39,6 +39,12 @@ data class Task(
     val notificationEnabled: Boolean = true,
     val morningBriefingEligible: Boolean = true,
 ) {
+    val category: TaskCategory
+        get() = TaskCategory.fromText(title, description)
+
+    val effectivePriority: TaskPriority
+        get() = if (priority == TaskPriority.MEDIUM) TaskCategory.inferPriority(category) else priority
+
     val schedule: ReminderSchedule?
         get() {
             val trigger = reminderTime ?: dueDate ?: return null

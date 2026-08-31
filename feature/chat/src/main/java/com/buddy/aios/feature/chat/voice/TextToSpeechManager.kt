@@ -76,11 +76,11 @@ class TextToSpeechManager @Inject constructor(
         if (status == TextToSpeech.SUCCESS) {
             var result = tts?.setLanguage(Locale.getDefault())
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                AppLogger.w(TAG, "Default locale (${Locale.getDefault()}) TTS data missing (code=$result). Falling back to Locale.US")
+                AppLogger.w(TAG, "TTS onInit: default locale (${Locale.getDefault()}) data missing (code=$result). Falling back to Locale.US")
                 result = tts?.setLanguage(Locale.US)
             }
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                AppLogger.w(TAG, "Locale.US TTS data missing (code=$result). Falling back to Locale.ENGLISH")
+                AppLogger.w(TAG, "TTS onInit: Locale.US data missing (code=$result). Falling back to Locale.ENGLISH")
                 result = tts?.setLanguage(Locale.ENGLISH)
             }
 
@@ -91,34 +91,54 @@ class TextToSpeechManager @Inject constructor(
                 tts?.setSpeechRate(0.85f)
                 tts?.setPitch(1.0f)
                 tts?.setOnUtteranceProgressListener(createProgressListener())
-                AppLogger.d(TAG, "TextToSpeech initialized successfully (isInitialized=true, speechRate=0.85f)")
+                AppLogger.d(TAG, "TTS onInit: SUCCESS — isInitialized=true, speechRate=0.85f, buddyMode=$currentBuddyMode")
 
                 if (currentBuddyMode.canVoiceOutput) {
                     _state.value = TextToSpeechState.Idle
                 }
             } else {
-                AppLogger.w(TAG, "TextToSpeech language missing or not supported (code=$result)")
+                AppLogger.w(TAG, "TTS onInit: language not supported (code=$result) — voice output disabled")
                 _state.value = TextToSpeechState.Error("Language not supported for speech synthesis")
             }
         } else {
-            AppLogger.w(TAG, "TextToSpeech initialization failed with status: $status")
+            AppLogger.w(TAG, "TTS onInit: FAILED with status=$status")
             isInitialized = false
             _state.value = TextToSpeechState.Error("Failed to initialize speech engine")
         }
     }
 
+    /**
+     * Speak [text] aloud. Safe to call from ANY thread (IO, background, Main).
+     * All TTS engine interaction and state updates are dispatched to Main.
+     */
     override fun speak(text: String) {
+        // Dispatch all TTS operations to Main thread. tts.speak() must run on the
+        // thread that owns the TTS engine (which is the Main thread from init).
+        scope.launch {
+            speakOnMain(text)
+        }
+    }
+
+    /**
+     * Internal implementation — must only be called from [scope] (Main thread).
+     */
+    private fun speakOnMain(text: String) {
+        val textAvailable = text.isNotBlank()
+        AppLogger.d(TAG, "VoiceOutput: speak() requested — textAvailable=$textAvailable, chars=${text.length}, isInitialized=$isInitialized, buddyMode=$currentBuddyMode, voiceSessionMode=see VoiceConversationSession")
+
         if (!currentBuddyMode.canVoiceOutput) {
-            AppLogger.w(TAG, "Speech output blocked: BuddyMode is $currentBuddyMode")
+            AppLogger.w(TAG, "VoiceOutput: BLOCKED by BuddyMode=$currentBuddyMode")
             _state.value = TextToSpeechState.Disabled
             return
         }
 
-        val textAvailable = text.isNotBlank()
-        AppLogger.d(TAG, "VoiceOutput: textAvailable=$textAvailable, textLength=${text.length}, isInitialized=$isInitialized")
+        if (!isInitialized) {
+            AppLogger.w(TAG, "VoiceOutput: BLOCKED — TTS not yet initialized (isInitialized=false). speak() was called before onInit completed.")
+            return
+        }
 
-        if (!isInitialized || !textAvailable) {
-            AppLogger.w(TAG, "Cannot speak: initialized=$isInitialized, textAvailable=$textAvailable")
+        if (!textAvailable) {
+            AppLogger.w(TAG, "VoiceOutput: BLOCKED — text is empty/blank")
             return
         }
 
@@ -129,6 +149,7 @@ class TextToSpeechManager @Inject constructor(
 
         try {
             val utteranceId = "buddy_tts_${System.currentTimeMillis()}"
+            AppLogger.d(TAG, "VoiceOutput: calling tts.speak() — utteranceId=$utteranceId")
             val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
             if (result == TextToSpeech.SUCCESS) {
                 _state.value = TextToSpeechState.Speaking(text)
@@ -137,27 +158,30 @@ class TextToSpeechManager @Inject constructor(
                     message = "🔊 Speaking...",
                     autoDismissMs = 0L,
                 )
-                AppLogger.d(TAG, "VoiceOutput: speak() result=SUCCESS for ${text.length} chars")
+                AppLogger.d(TAG, "VoiceOutput: speak() SUCCESS — utteranceId=$utteranceId, chars=${text.length}")
             } else {
-                AppLogger.w(TAG, "VoiceOutput: speak() result=ERROR code $result")
+                AppLogger.w(TAG, "VoiceOutput: speak() FAILED — tts.speak() returned code=$result")
                 _state.value = TextToSpeechState.Error("Failed to synthesize speech")
             }
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Error speaking text", e)
+            AppLogger.e(TAG, "VoiceOutput: speak() EXCEPTION", e)
             _state.value = TextToSpeechState.Error("Speech synthesis exception")
         }
     }
 
     /**
      * Stop any active speech and emit [TextToSpeechState.Idle].
-     * Called by external owners (VoiceConversationSession.stopSession, toggleVoiceInput).
+     * Safe to call from ANY thread — dispatches to Main.
      */
     override fun stop() {
-        flushTtsEngine()
-        if (_state.value is TextToSpeechState.Speaking) {
-            _state.value = TextToSpeechState.Idle
+        scope.launch {
+            AppLogger.d(TAG, "VoiceOutput: stop() called — currentState=${_state.value}")
+            flushTtsEngine()
+            if (_state.value is TextToSpeechState.Speaking) {
+                _state.value = TextToSpeechState.Idle
+            }
+            dismissIslandIfSpeaking()
         }
-        dismissIslandIfSpeaking()
     }
 
     /**
@@ -196,29 +220,56 @@ class TextToSpeechManager @Inject constructor(
     }
 
     private fun createProgressListener(): UtteranceProgressListener = object : UtteranceProgressListener() {
+        // UtteranceProgressListener callbacks fire on an arbitrary (non-main) background thread.
+        // All StateFlow writes and islandStateManager calls MUST be posted back to Main.
+
         override fun onStart(utteranceId: String?) {
-            AppLogger.d(TAG, "TTS onStart: $utteranceId")
+            AppLogger.d(TAG, "TTS onStart: utteranceId=$utteranceId")
+            // onStart is informational — no state write needed here.
         }
 
         override fun onDone(utteranceId: String?) {
-            AppLogger.d(TAG, "TTS onDone: $utteranceId")
-            if (_state.value is TextToSpeechState.Speaking) {
-                _state.value = TextToSpeechState.Idle
+            AppLogger.d(TAG, "TTS onDone: utteranceId=$utteranceId — posting Idle to Main thread")
+            // Post to Main: StateFlow writes and islandStateManager must run on Main.
+            scope.launch {
+                if (_state.value is TextToSpeechState.Speaking) {
+                    _state.value = TextToSpeechState.Idle
+                    AppLogger.d(TAG, "TTS onDone: state → Idle")
+                }
+                dismissIslandIfSpeaking()
             }
-            dismissIslandIfSpeaking()
         }
 
         @Deprecated("Deprecated in Java")
         override fun onError(utteranceId: String?) {
-            AppLogger.w(TAG, "TTS onError: $utteranceId")
-            _state.value = TextToSpeechState.Error("Speech playback interrupted")
-            dismissIslandIfSpeaking()
+            // The deprecated onError(utteranceId) is called by the OS when tts.stop() is
+            // called externally (e.g., by flushTtsEngine() or stop()). This is an intentional
+            // flush, NOT a real error — treat it as Idle so the voice pipeline continues normally.
+            AppLogger.d(TAG, "TTS onError (deprecated): utteranceId=$utteranceId — treated as intentional flush → Idle")
+            scope.launch {
+                if (_state.value is TextToSpeechState.Speaking) {
+                    _state.value = TextToSpeechState.Idle
+                }
+                dismissIslandIfSpeaking()
+            }
         }
 
         override fun onError(utteranceId: String?, errorCode: Int) {
-            AppLogger.w(TAG, "TTS onError: $utteranceId code=$errorCode")
-            _state.value = TextToSpeechState.Error("Speech error ($errorCode)")
-            dismissIslandIfSpeaking()
+            // ERROR_STOPPED (code 4) is produced by tts.stop() — intentional flush, not a real error.
+            // All other codes are genuine TTS engine failures.
+            val isIntentionalStop = (errorCode == TextToSpeech.ERROR)
+            AppLogger.w(TAG, "TTS onError: utteranceId=$utteranceId, errorCode=$errorCode, intentionalStop=$isIntentionalStop")
+            scope.launch {
+                if (isIntentionalStop) {
+                    if (_state.value is TextToSpeechState.Speaking) {
+                        _state.value = TextToSpeechState.Idle
+                    }
+                } else {
+                    AppLogger.w(TAG, "TTS onError: genuine playback error (code=$errorCode)")
+                    _state.value = TextToSpeechState.Error("Speech error ($errorCode)")
+                }
+                dismissIslandIfSpeaking()
+            }
         }
     }
 

@@ -107,10 +107,12 @@ class MorningContextEngine @Inject constructor(
         // Format Current Time (e.g. "6:15 AM")
         val timeFormat = SimpleDateFormat("h:mm a", Locale.ENGLISH).format(nowCal.time)
 
-        // Battery Message (e.g. "Your battery level is 85%")
-        val batteryMessage = batteryLevel?.let { level ->
-            if (isCharging) "Your phone is currently charging at $level%." else "Your battery level is $level%."
-        } ?: "Your battery level is at 85%."
+        // Battery Message (only if low <= 20% or charging)
+        val batteryMessage = when {
+            isCharging && batteryLevel != null -> "Your phone is currently charging at $batteryLevel%."
+            batteryLevel != null && batteryLevel <= 20 -> "Your battery level is low at $batteryLevel%."
+            else -> null
+        }
 
         // Sleep Summary (e.g. "You slept approximately 7 hours and 30 minutes.")
         val sleepSummary = if (sleepEstimate.hasSufficientData) {
@@ -133,13 +135,25 @@ class MorningContextEngine @Inject constructor(
 
         // Tasks & Priority Summary
         val priorityTasks = activeTasks.take(3)
-        val prioritySummary = if (priorityTasks.isNotEmpty()) {
-            val topTask = priorityTasks.first()
-            val timeStr = topTask.reminderTime?.let {
-                " at ${SimpleDateFormat("h:mm a", Locale.ENGLISH).format(Date(it))}"
-            } ?: ""
-            "You have ${priorityTasks.size} task${if (priorityTasks.size > 1) "s" else ""} scheduled for today, starting with '${topTask.title}'$timeStr."
-        } else "Your schedule is clear right now."
+        val highPriorityTask = activeTasks.firstOrNull { it.effectivePriority == com.buddy.aios.core.domain.entity.TaskPriority.HIGH } ?: activeTasks.firstOrNull()
+        val prioritySummary = if (activeTasks.isNotEmpty()) {
+            val countStr = "You have ${activeTasks.size} item${if (activeTasks.size > 1) "s" else ""} today."
+            val reminderTime = highPriorityTask?.reminderTime
+            if (highPriorityTask != null && reminderTime != null) {
+                val cal = Calendar.getInstance().apply { timeInMillis = reminderTime }
+                val minute = cal.get(Calendar.MINUTE)
+                val pattern = if (minute == 0) "h a" else "h:mm a"
+                val timeStr = SimpleDateFormat(pattern, Locale.ENGLISH).format(Date(reminderTime))
+                val cleanTitle = highPriorityTask.title.replace(Regex("(?i)^(my|your|the)\\s+"), "").trim()
+                "$countStr Your $cleanTitle is at $timeStr."
+            } else if (highPriorityTask != null) {
+                "$countStr starting with '${highPriorityTask.title}'."
+            } else {
+                countStr
+            }
+        } else {
+            "Your schedule is clear right now."
+        }
 
         // Grounded Daily Suggestion
         val suggestion = suggestionEngine.generateSuggestion(
@@ -149,7 +163,25 @@ class MorningContextEngine @Inject constructor(
             hasWeatherAlert = isWeatherWarning,
         )
 
-        // Generate Structured Spoken Voice Briefing: Greeting -> Time -> Battery -> Weather -> Sleep -> Tasks -> Suggestion
+        // Recent high-importance memories from last 20 hours (things user mentioned yesterday evening)
+        val twentyHoursAgoMs = System.currentTimeMillis() - (20 * 60 * 60 * 1000L)
+        val recentMemories = memories
+            .filter { it.importance >= 0.6f && it.createdAt >= twentyHoursAgoMs }
+            .sortedByDescending { it.importance }
+            .take(2)
+
+        // Build a natural spoken summary of recent memories that aren't already in task titles
+        val memorySummary = if (recentMemories.isNotEmpty()) {
+            val taskTitlesLower = activeTasks.map { it.title.lowercase() }.toSet()
+            val filtered = recentMemories.filter { mem ->
+                taskTitlesLower.none { title -> mem.summary.lowercase().take(30).let { s -> title.contains(s.take(15)) } }
+            }
+            if (filtered.isNotEmpty()) {
+                "Also, " + filtered.joinToString(" ") { "${it.summary.trimEnd('.')}. " }.trim()
+            } else null
+        } else null
+
+        // Generate Structured Spoken Voice Briefing: Greeting -> Time -> Battery -> Weather -> Sleep -> Tasks -> Memory -> Suggestion
         val spokenBriefing = buildSpokenBriefing(
             displayName = displayName,
             greeting = greeting,
@@ -158,6 +190,7 @@ class MorningContextEngine @Inject constructor(
             weatherSummary = weatherSummary,
             sleepSummary = sleepSummary,
             prioritySummary = prioritySummary,
+            memorySummary = memorySummary,
             suggestion = suggestion,
         )
 
@@ -222,19 +255,24 @@ class MorningContextEngine @Inject constructor(
         displayName: String,
         greeting: String,
         timeString: String,
-        batteryMessage: String,
+        batteryMessage: String?,
         weatherSummary: String,
         sleepSummary: String,
         prioritySummary: String,
+        memorySummary: String?,
         suggestion: String?,
     ): String = buildString {
-        append(greeting.removeSuffix("☀️").trim()).append(". ")
+        val cleanGreeting = greeting.removeSuffix("☀️").trim()
+        append(cleanGreeting).append(if (cleanGreeting.endsWith(".")) " " else ". ")
         append("It is ").append(timeString).append(". ")
 
-        append(batteryMessage).append(" ")
+        batteryMessage?.let { append(it).append(" ") }
         append(weatherSummary).append(" ")
         append(sleepSummary).append(" ")
         append(prioritySummary).append(" ")
+
+        // Surface important things user mentioned recently (e.g. interview, meetings)
+        memorySummary?.let { append(it).append(" ") }
 
         suggestion?.let { append(it).append(" ") }
 

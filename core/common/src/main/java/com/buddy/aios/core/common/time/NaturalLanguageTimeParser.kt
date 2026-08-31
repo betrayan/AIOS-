@@ -68,6 +68,13 @@ object NaturalLanguageTimeParser {
                         if (calculatedHour < 12) calculatedHour += 12
                     } else if (lower.contains("morning")) {
                         if (calculatedHour == 12) calculatedHour = 0
+                    } else if (calculatedHour in 1..6) {
+                        // Heuristic: bare small hours (1-6) with no time-of-day context.
+                        // If the current clock time is already past noon, the user almost
+                        // certainly means PM — nobody says "remind me at 2" meaning 2 AM.
+                        val nowHour = Calendar.getInstance().apply { timeInMillis = now }
+                            .get(Calendar.HOUR_OF_DAY)
+                        if (nowHour >= 12) calculatedHour += 12
                     }
                 }
 

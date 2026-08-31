@@ -85,10 +85,20 @@ object IntentParser {
                         }
                         else -> rawDue
                     }
+                    val category = com.buddy.aios.core.domain.entity.TaskCategory.fromText(title, desc)
+                    val inferredPriority = com.buddy.aios.core.domain.entity.TaskCategory.inferPriority(category)
+                    val rawPriorityStr = obj["priority"]?.jsonPrimitive?.content?.uppercase()
+                    val priority = when (rawPriorityStr) {
+                        "HIGH" -> com.buddy.aios.core.domain.entity.TaskPriority.HIGH
+                        "LOW" -> com.buddy.aios.core.domain.entity.TaskPriority.LOW
+                        "URGENT" -> com.buddy.aios.core.domain.entity.TaskPriority.HIGH
+                        else -> inferredPriority
+                    }
                     BuddyTool.CreateTask(
                         title = title,
                         description = desc,
                         dueTimestamp = due,
+                        priority = priority,
                     )
                 }
                 "COMPLETE" -> {

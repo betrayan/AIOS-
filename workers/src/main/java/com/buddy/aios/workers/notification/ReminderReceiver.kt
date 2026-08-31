@@ -176,11 +176,21 @@ class ReminderReceiver : BroadcastReceiver() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                val notificationBody = if (desc.isNotBlank()) desc else title
+                val reminderTimestamp = task.reminderTime ?: task.dueDate ?: System.currentTimeMillis()
+                val taskTz = task.timezone.ifBlank { TimeZone.getDefault().id }
+                val cal = java.util.Calendar.getInstance(TimeZone.getTimeZone(taskTz)).apply { timeInMillis = reminderTimestamp }
+                val minute = cal.get(java.util.Calendar.MINUTE)
+                val pattern = if (minute == 0) "h a" else "h:mm a"
+                val spokenTime = SimpleDateFormat(pattern, Locale.ENGLISH).apply {
+                    timeZone = TimeZone.getTimeZone(taskTz)
+                }.format(Date(reminderTimestamp))
+
+                val notificationTitle = "Reminder: ${task.title}"
+                val notificationBody = if (desc.isNotBlank()) desc else "Scheduled for $spokenTime"
 
                 val builder = NotificationCompat.Builder(context, AIOSNotificationManager.CHANNEL_REMINDER)
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                    .setContentTitle("AIOS Reminder")
+                    .setContentTitle(notificationTitle)
                     .setContentText(notificationBody)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(notificationBody))
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -209,17 +219,16 @@ class ReminderReceiver : BroadcastReceiver() {
                 // Voice Reminder Delivery (if enabled and BuddyMode allows)
                 val buddyMode = buddyModeRepository.getBuddyMode()
                 if (task.voiceEnabled && (buddyMode == BuddyMode.ACTIVE || buddyMode == BuddyMode.QUIET)) {
-                    val reminderTimestamp = task.reminderTime ?: task.dueDate ?: System.currentTimeMillis()
-                    val taskTz = task.timezone.ifBlank { TimeZone.getDefault().id }
-                    val timeString = SimpleDateFormat("h:mm a", Locale.ENGLISH).apply {
-                        timeZone = TimeZone.getTimeZone(taskTz)
-                    }.format(Date(reminderTimestamp))
-
-                    val voiceText = "It is $timeString. Your reminder is due: ${task.title}."
+                    val cleanTitle = task.title.replace(Regex("(?i)^(my|your|the)\\s+"), "").trim()
+                    val voiceText = if (desc.isNotBlank() && !desc.equals(task.title, ignoreCase = true)) {
+                        "Buddy, it's $spokenTime. You have your $cleanTitle: $desc."
+                    } else {
+                        "Buddy, it's $spokenTime. You have your $cleanTitle."
+                    }
                     withContext(Dispatchers.Main) {
                         ttsManager.speak(voiceText)
                     }
-                    AppLogger.d(TAG, "Spoken voice reminder triggered for task id=${task.id} (time=$timeString): '$voiceText'")
+                    AppLogger.d(TAG, "Spoken voice reminder triggered for task id=${task.id} (time=$spokenTime): '$voiceText'")
                 }
 
             } catch (e: Exception) {

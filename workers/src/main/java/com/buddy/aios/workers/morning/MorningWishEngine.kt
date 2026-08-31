@@ -131,15 +131,43 @@ class MorningWishEngine @Inject constructor(
         )
 
         try {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
-            val formatStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", Locale.ENGLISH).format(target)
-            AppLogger.d(TAG, "scheduleMorningWish: SUCCESS — AlarmManager registered for $formatStr (millis=$triggerAtMillis)")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        pendingIntent
+                    )
+                    val formatStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", Locale.ENGLISH).format(target)
+                    AppLogger.d(TAG, "scheduleMorningWish: SUCCESS — Exact AlarmManager registered for $formatStr (millis=$triggerAtMillis)")
+                } else {
+                    AppLogger.w(TAG, "canScheduleExactAlarms is false — falling back to setAndAllowWhileIdle")
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAtMillis,
+                        pendingIntent
+                    )
+                }
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+                val formatStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z", Locale.ENGLISH).format(target)
+                AppLogger.d(TAG, "scheduleMorningWish: SUCCESS — AlarmManager registered for $formatStr (millis=$triggerAtMillis)")
+            }
         } catch (e: SecurityException) {
-            AppLogger.e(TAG, "Failed to schedule exact Morning Wish alarm due to permission", e)
+            AppLogger.e(TAG, "Failed to schedule exact Morning Wish alarm due to permission — falling back to setAndAllowWhileIdle", e)
+            try {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            } catch (fallbackEx: Exception) {
+                AppLogger.e(TAG, "Fallback setAndAllowWhileIdle also failed", fallbackEx)
+            }
         }
     }
 
@@ -181,19 +209,32 @@ class MorningWishEngine @Inject constructor(
         saveStateForToday(MorningWishState.WAITING_FOR_ACK)
 
         val userName = (userRepository.getUserProfile() as? Result.Success)?.value?.name ?: "Vijay"
-        val greeting = getTimeAwareGreeting(userName, settings.morningWishHour, settings.morningWishMinute)
+        val nowLocal = ZonedDateTime.now()
+        val greeting = getTimeAwareGreeting(userName, nowLocal)
 
-        val briefingResult = morningBriefingEngine.generateAndDeliverMorningBriefing(forceDebug = isManualTrigger)
+        val briefingResult = morningBriefingEngine.generateAndDeliverMorningBriefing(
+            forceDebug = isManualTrigger,
+            suppressNotification = true, // MorningWishEngine delivers its own richer notification below
+        )
+
+        val hour = nowLocal.hour
+        val minute = nowLocal.minute
+        val displayHour = if (hour % 12 == 0) 12 else hour % 12
+        val amPm = if (hour < 12) "AM" else "PM"
+        val spokenTime = if (minute == 0) String.format(Locale.ENGLISH, "%d %s", displayHour, amPm) else String.format(Locale.ENGLISH, "%d:%02d", displayHour, minute)
 
         val speechText = when {
             !isRepeat -> {
-                "$greeting\n\n${briefingResult.voiceBriefing}"
+                briefingResult.voiceBriefing
             }
             repeatCount == 1 -> {
-                "$greeting I'm still here. You have ${briefingResult.priorityTasks.size} important things today."
+                "Buddy, good morning. It's already $spokenTime. Your morning briefing is still waiting."
+            }
+            repeatCount == 2 -> {
+                "Buddy, it's $spokenTime already. Shall we start the day?"
             }
             else -> {
-                "$greeting Your morning briefing is waiting."
+                "Buddy, it's $spokenTime. Whenever you're ready, your morning briefing is here."
             }
         }
 
@@ -203,21 +244,38 @@ class MorningWishEngine @Inject constructor(
         }
 
         // 2. Post Morning Wish Notification FIRST (ensures notification appears regardless of TTS state)
-        deliverNotification(greeting, briefingResult.notificationBody)
+        // Use the rich computed body from MorningBriefingEngine (task count, times, weather)
+        val notifBody = briefingResult.notificationBody.ifBlank { briefingResult.voiceBriefing.take(120) }
+        deliverNotification(greeting, notifBody)
 
-        // 3. Speak summary via TTS
+        // 3. Speak summary via TTS with Audio Focus
         val buddyMode = buddyModeRepository.getBuddyMode()
+        AppLogger.d(TAG, "triggerMorningWish: buddyMode=$buddyMode, willSpeak=${buddyMode != BuddyMode.OFF && buddyMode != BuddyMode.SILENT}, speechLength=${speechText.length}")
         if (buddyMode != BuddyMode.OFF && buddyMode != BuddyMode.SILENT) {
+            requestAudioFocus()
             voiceOutputManager.speak(speechText)
         }
 
-        // 4. Update Dynamic Island Pill
+        // 4. Update Dynamic Island Pill with interactive navigation callback
+        val mainAppIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", "chat")
+        }
+
         islandStateManager.show(
             state = AIOSIslandState.REMINDER,
             message = "🌅 Morning Wish • Waiting for response",
             autoDismissMs = 0L,
             actionLabel = "Open Chat",
-            onAction = {}
+            onAction = {
+                mainAppIntent?.let { intent ->
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        AppLogger.e(TAG, "Failed to start activity from Dynamic Island onAction", e)
+                    }
+                }
+            }
         )
 
         // 5. Schedule 10-minute repeat (up to 3 times / 30 mins) if not acknowledged
@@ -230,7 +288,14 @@ class MorningWishEngine @Inject constructor(
 
     override suspend fun acknowledgeMorningWish(source: String) {
         AppLogger.d(TAG, "Acknowledging Morning Wish from source: $source")
-        saveStateForToday(MorningWishState.ACKNOWLEDGED)
+
+        val targetState = if (source == "notification_silence" || source == "silence") {
+            MorningWishState.DISMISSED
+        } else {
+            MorningWishState.ACKNOWLEDGED
+        }
+
+        saveStateForToday(targetState)
 
         // 1. Stop 10-minute repeat alarm
         cancelRepeatAlarm()
@@ -247,9 +312,10 @@ class MorningWishEngine @Inject constructor(
         }
 
         // 4. Update Dynamic Island
+        val islandMessage = if (targetState == MorningWishState.DISMISSED) "🌅 Morning Wish Silenced" else "🌅 Morning Wish Acknowledged"
         islandStateManager.show(
             state = AIOSIslandState.TASK_CREATED,
-            message = "🌅 Morning Wish Acknowledged",
+            message = islandMessage,
             autoDismissMs = 2500L
         )
 
@@ -285,18 +351,42 @@ class MorningWishEngine @Inject constructor(
         return SimpleDateFormat("yyyy_MM_dd", Locale.ENGLISH).format(Date())
     }
 
-    private fun getTimeAwareGreeting(userName: String, scheduledHour: Int, scheduledMinute: Int): String {
-        val displayHour = if (scheduledHour % 12 == 0) 12 else scheduledHour % 12
-        val amPm = if (scheduledHour < 12) "AM" else "PM"
-        val timeFormatted = String.format(Locale.ENGLISH, "%d:%02d %s", displayHour, scheduledMinute, amPm)
+    private fun getTimeAwareGreeting(userName: String, dateTime: ZonedDateTime = ZonedDateTime.now()): String {
+        val hour = dateTime.hour
+        val minute = dateTime.minute
+        val displayHour = if (hour % 12 == 0) 12 else hour % 12
+        val amPm = if (hour < 12) "AM" else "PM"
+        val timeFormatted = String.format(Locale.ENGLISH, "%d:%02d %s", displayHour, minute, amPm)
 
-        val greetingPrefix = when (scheduledHour) {
+        val greetingPrefix = when (hour) {
             in 5..11 -> "Good morning"
             in 12..16 -> "Good afternoon"
             in 17..20 -> "Good evening"
             else -> "Good night"
         }
         return "$greetingPrefix, $userName. It is $timeFormatted."
+    }
+
+    private fun requestAudioFocus() {
+        try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val focusRequest = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .build()
+                audioManager?.requestAudioFocus(focusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager?.requestAudioFocus(null, android.media.AudioManager.STREAM_ALARM, android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            }
+        } catch (e: Exception) {
+            AppLogger.w(TAG, "Failed to request audio focus for Morning Wish speech: ${e.message}")
+        }
     }
 
     @SuppressLint("MissingPermission")

@@ -56,14 +56,28 @@ sealed interface ToolResult {
     data object ValidationError : ToolResult
 }
 
-/** Maps a [Task] domain entity to a [BuddyTool.CreateTask]. */
-fun BuddyTool.CreateTask.toDomainTask(now: Long = System.currentTimeMillis()): Task = Task(
-    id = java.util.UUID.randomUUID().toString(),
-    title = title,
-    description = description,
-    isCompleted = false,
-    createdAt = now,
-    dueDate = dueTimestamp,
-    reminderTime = dueTimestamp,
-    priority = priority,
-)
+/**
+ * Maps a [BuddyTool.CreateTask] to a [Task] domain entity.
+ *
+ * Key contract:
+ * - [Task.isReminder] is automatically `true` when [dueTimestamp] is non-null (domain default).
+ * - [Task.voiceEnabled] defaults to `true` — TTS fires on reminder delivery.
+ * - [Task.notificationId] defaults to `id.hashCode()` — unique per task, no collisions.
+ * - [Task.timezone] defaults to the device timezone — correct locale for alarm display.
+ * - [Task.morningBriefingEligible] defaults to `true` — surfaces in Morning Wish.
+ */
+fun BuddyTool.CreateTask.toDomainTask(now: Long = System.currentTimeMillis()): Task {
+    val taskId = java.util.UUID.randomUUID().toString()
+    return Task(
+        id = taskId,
+        title = title,
+        description = description,
+        isCompleted = false,
+        createdAt = now,
+        dueDate = dueTimestamp,
+        reminderTime = dueTimestamp,
+        priority = priority,
+        // All other fields (isReminder, voiceEnabled, notificationId, timezone,
+        // notificationEnabled, morningBriefingEligible) use correct Task defaults.
+    )
+}
