@@ -120,14 +120,20 @@ class HomeViewModel @Inject constructor(
      * Routes through [IReminderEngine] which sets all reminder fields correctly:
      * voiceEnabled=true, isReminder=true, timezone=device, notificationId=uuid.hashCode().
      */
-    fun onCreateReminder(title: String, description: String = "", reminderTimeMs: Long) {
+    fun onCreateReminder(
+        title: String,
+        description: String = "",
+        reminderTimeMs: Long,
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        voiceEnabled: Boolean = true,
+    ) {
         if (title.isBlank()) return
         viewModelScope.launch {
             reminderEngine.createReminder(
                 title = title.trim(),
                 description = description.trim(),
                 triggerTimestamp = reminderTimeMs,
-                voiceEnabled = true,
+                voiceEnabled = voiceEnabled,
             )
         }
     }
